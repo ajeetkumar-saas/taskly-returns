@@ -18,6 +18,35 @@ const pool = new Pool({
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_APP_SHARED_SECRET;
 const APP_URL = process.env.APP_URL || 'http://localhost:3001';
+const SHIPROCKET_EMAIL = process.env.SHIPROCKET_EMAIL;
+const SHIPROCKET_PASSWORD = process.env.SHIPROCKET_PASSWORD;
+const SHIPROCKET_BASE = 'https://apiv2.shiprocket.in/v1/external';
+
+let shiprocketToken = '';
+let shiprocketTokenExpiry = 0;
+
+async function getShiprocketToken() {
+  if (shiprocketToken && Date.now() < shiprocketTokenExpiry) return shiprocketToken;
+  if (!SHIPROCKET_EMAIL || !SHIPROCKET_PASSWORD) return null;
+  const r = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: SHIPROCKET_EMAIL, password: SHIPROCKET_PASSWORD })
+  });
+  const d = await r.json();
+  shiprocketToken = d.token;
+  shiprocketTokenExpiry = Date.now() + 9 * 24 * 60 * 60 * 1000;
+  return shiprocketToken;
+}
+
+async function shiprocketAPI(endpoint, method, body) {
+  const token = await getShiprocketToken();
+  if (!token) throw new Error('Shiprocket not configured');
+  const opts = { method, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(`${SHIPROCKET_BASE}${endpoint}`, opts);
+  return r.json();
+}
 
 async function initDB() {
   await pool.query(`
@@ -270,7 +299,64 @@ app.get('/api/returns/track/:id', async (req, res) => {
   res.json(r.rows[0]);
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '2.0.0' }));
+// Shiprocket APIs
+app.post('/api/shiprocket/pickup', async (req, res) => {
+  const { return_id, customer_name, customer_email, customer_phone, customer_address, customer_city, customer_state, customer_pincode, product_name, product_sku, quantity, amount, order_id } = req.body;
+  if (!return_id) return res.status(400).json({ error: 'return_id required' });
+  try {
+    const orderData = await shiprocketAPI('/orders/create/return', 'POST', {
+      order_id: `RETURN-${return_id}`,
+      order_date: new Date().toISOString().split('T')[0],
+      channel_id: '',
+      pickup_customer_name: customer_name,
+      pickup_address: customer_address || 'Customer Address',
+      pickup_city: customer_city || 'City',
+      pickup_state: customer_state || 'State',
+      pickup_country: 'India',
+      pickup_pincode: customer_pincode || '110001',
+      pickup_email: customer_email || '',
+      pickup_phone: customer_phone || '',
+      shipping_customer_name: customer_name,
+      shipping_address: customer_address || 'Warehouse Address',
+      shipping_city: customer_city || 'City',
+      shipping_state: customer_state || 'State',
+      shipping_country: 'India',
+      shipping_pincode: customer_pincode || '110001',
+      shipping_email: customer_email || '',
+      shipping_phone: customer_phone || '',
+      order_items: [{
+        name: product_name || 'Return Item',
+        sku: product_sku || 'SKU',
+        units: quantity || 1,
+        selling_price: amount || 0
+      }],
+      payment_method: 'prepaid',
+      sub_total: amount || 0,
+      length: 10, breadth: 10, height: 10, weight: 0.5
+    });
+    if (orderData.order_id) {
+      await pool.query('UPDATE returns SET pickup_status=$1, tracking_number=$2, updated_at=NOW() WHERE id=$3',
+        ['pickup_scheduled', orderData.shipment_id || '', return_id]);
+    }
+    res.json(orderData);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/shiprocket/track/:shipment_id', async (req, res) => {
+  try {
+    const data = await shiprocketAPI(`/courier/track/shipment/${req.params.shipment_id}`, 'GET');
+    res.json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/shiprocket/couriers', async (req, res) => {
+  try {
+    const data = await shiprocketAPI('/courier/serviceability', 'GET');
+    res.json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '2.1.0', shiprocket: !!SHIPROCKET_EMAIL }));
 
 app.use(express.static(path.join(__dirname, '../client/build')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
