@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taskly Returns - India's #1 COD Returns Management for Shopify</title>
+<meta name="description" content="Reduce RTO by 40%. Automate COD returns, exchanges & refunds for your Shopify store. Built for Indian D2C brands.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--primary:#4F46E5;--primary-light:#EEF2FF;--primary-dark:#3730A3;--success:#059669;--gray-50:#F9FAFB;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-300:#D1D5DB;--gray-400:#9CA3AF;--gray-500:#6B7280;--gray-600:#4B5563;--gray-700:#374151;--gray-800:#1F2937;--gray-900:#111827}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--gray-800);line-height:1.6}
+a{text-decoration:none;color:inherit}
+
+/* Nav */
+.nav{position:fixed;top:0;left:0;right:0;background:rgba(255,255,255,0.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--gray-200);z-index:100;padding:0 24px}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px}
+.nav-logo{font-size:18px;font-weight:700;color:var(--primary);display:flex;align-items:center;gap:8px}
+.nav-links{display:flex;align-items:center;gap:32px;font-size:14px;color:var(--gray-600)}
+.nav-links a:hover{color:var(--primary)}
+.nav-cta{background:var(--primary);color:white!important;padding:8px 20px;border-radius:8px;font-weight:500;font-size:13px}
+.nav-cta:hover{background:var(--primary-dark)}
+
+/* Hero */
+.hero{padding:120px 24px 80px;text-align:center;background:linear-gradient(180deg,var(--primary-light) 0%,white 100%)}
+.hero-inner{max-width:800px;margin:0 auto}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:white;border:1px solid var(--gray-200);padding:6px 16px;border-radius:20px;font-size:13px;color:var(--gray-600);margin-bottom:24px}
+.hero-badge i{color:var(--primary)}
+.hero h1{font-size:48px;font-weight:800;line-height:1.15;margin-bottom:20px;color:var(--gray-900)}
+.hero h1 span{color:var(--primary)}
+.hero p{font-size:18px;color:var(--gray-500);max-width:600px;margin:0 auto 32px;line-height:1.7}
+.hero-buttons{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn-hero{padding:14px 32px;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:var(--primary);color:white}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-outline{background:white;color:var(--gray-700);border:1px solid var(--gray-300)}
+.btn-outline:hover{background:var(--gray-50)}
+.hero-stats{display:flex;justify-content:center;gap:48px;margin-top:48px}
+.hero-stat .num{font-size:32px;font-weight:800;color:var(--primary)}
+.hero-stat .text{font-size:13px;color:var(--gray-500)}
+
+/* Problem */
+.problem{padding:80px 24px;background:white}
+.problem-inner{max-width:1000px;margin:0 auto}
+.section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--primary);margin-bottom:8px;text-align:center}
+.section-title{font-size:32px;font-weight:700;text-align:center;margin-bottom:16px}
+.section-sub{font-size:16px;color:var(--gray-500);text-align:center;max-width:600px;margin:0 auto 48px}
+.problem-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.problem-card{background:var(--gray-50);border-radius:12px;padding:28px;text-align:center}
+.problem-card .icon{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 16px}
+.problem-card h3{font-size:18px;font-weight:700;margin-bottom:8px}
+.problem-card .stat{font-size:36px;font-weight:800;margin-bottom:4px}
+.problem-card p{font-size:14px;color:var(--gray-500)}
+
+/* Features */
+.features{padding:80px 24px;background:var(--gray-50)}
+.features-inner{max-width:1000px;margin:0 auto}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feature-card{background:white;border-radius:12px;padding:24px;border:1px solid var(--gray-200);transition:all 0.2s}
+.feature-card:hover{border-color:var(--primary);box-shadow:0 4px 12px rgba(79,70,229,0.1)}
+.feature-card .icon{width:44px;height:44px;border-radius:10px;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:14px}
+.feature-card h3{font-size:15px;font-weight:600;margin-bottom:6px}
+.feature-card p{font-size:13px;color:var(--gray-500);line-height:1.6}
+
+/* How it works */
+.how{padding:80px 24px;background:white}
+.how-inner{max-width:900px;margin:0 auto}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:48px}
+.step-card{text-align:center;position:relative}
+.step-card .num{width:48px;height:48px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin:0 auto 16px}
+.step-card h3{font-size:15px;font-weight:600;margin-bottom:6px}
+.step-card p{font-size:13px;color:var(--gray-500)}
+.step-card:not(:last-child)::after{content:'';position:absolute;top:24px;left:calc(50% + 30px);width:calc(100% - 60px);height:2px;background:var(--gray-200)}
+
+/* Pricing */
+.pricing{padding:80px 24px;background:var(--gray-50)}
+.pricing-inner{max-width:900px;margin:0 auto}
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.pricing-card{background:white;border-radius:12px;padding:28px;border:1px solid var(--gray-200);text-align:center}
+.pricing-card.popular{border:2px solid var(--primary);position:relative}
+.pricing-card.popular::before{content:'Most Popular';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--primary);color:white;padding:4px 16px;border-radius:20px;font-size:11px;font-weight:600}
+.pricing-card .plan-name{font-size:16px;font-weight:600;margin-bottom:4px}
+.pricing-card .plan-desc{font-size:13px;color:var(--gray-500);margin-bottom:16px}
+.pricing-card .price{font-size:36px;font-weight:800;color:var(--gray-900)}
+.pricing-card .price span{font-size:14px;font-weight:400;color:var(--gray-400)}
+.pricing-card .price-period{font-size:13px;color:var(--gray-400);margin-bottom:20px}
+.pricing-card ul{list-style:none;text-align:left;margin-bottom:20px}
+.pricing-card ul li{padding:6px 0;font-size:13px;color:var(--gray-600);display:flex;align-items:center;gap:8px}
+.pricing-card ul li i{color:var(--success);font-size:12px}
+.pricing-btn{display:block;padding:10px;border-radius:8px;font-size:14px;font-weight:500;text-align:center;cursor:pointer;border:none;width:100%}
+.pricing-btn.primary{background:var(--primary);color:white}
+.pricing-btn.outline{background:white;color:var(--gray-700);border:1px solid var(--gray-300)}
+
+/* Testimonials */
+.social-proof{padding:80px 24px;background:white}
+.social-inner{max-width:1000px;margin:0 auto}
+.brands{display:flex;justify-content:center;gap:48px;flex-wrap:wrap;margin-top:48px;opacity:0.5}
+.brands span{font-size:18px;font-weight:700;color:var(--gray-400)}
+
+/* CTA */
+.cta{padding:80px 24px;background:var(--primary);text-align:center}
+.cta-inner{max-width:600px;margin:0 auto}
+.cta h2{font-size:32px;font-weight:700;color:white;margin-bottom:16px}
+.cta p{font-size:16px;color:rgba(255,255,255,0.8);margin-bottom:32px}
+.cta-btn{background:white;color:var(--primary);padding:14px 40px;border-radius:10px;font-size:16px;font-weight:600;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.cta-btn:hover{background:var(--gray-100)}
+
+/* Footer */
+.footer{padding:48px 24px;background:var(--gray-900);color:var(--gray-400);font-size:13px}
+.footer-inner{max-width:1000px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+.footer-logo{font-size:16px;font-weight:700;color:white;display:flex;align-items:center;gap:8px}
+.footer-links{display:flex;gap:24px}
+.footer-links a{color:var(--gray-400)}
+.footer-links a:hover{color:white}
+
+@media(max-width:768px){
+  .hero h1{font-size:32px}
+  .hero-stats{gap:24px}
+  .problem-grid,.features-grid,.pricing-grid{grid-template-columns:1fr}
+  .steps{grid-template-columns:repeat(2,1fr)}
+  .step-card:not(:last-child)::after{display:none}
+  .nav-links{display:none}
+  .hero-stat .num{font-size:24px}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-logo"><i class="fas fa-rotate-left"></i> Taskly Returns</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://taskly-returns-production.up.railway.app" class="nav-cta">Install free <i class="fas fa-arrow-right"></i></a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge"><i class="fas fa-bolt"></i> Built for Indian D2C Brands</div>
+    <h1>Stop losing money on <span>COD returns</span></h1>
+    <p>Automate your return & exchange process. Reduce RTO by 40%, save 10+ hours/week, and keep your customers happy. Works with every payment gateway and courier.</p>
+    <div class="hero-buttons">
+      <a href="https://taskly-returns-production.up.railway.app" class="btn-hero btn-primary"><i class="fas fa-rocket"></i> Install on Shopify - Free</a>
+      <a href="#how" class="btn-hero btn-outline"><i class="fas fa-play-circle"></i> See how it works</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="num">39%</div><div class="text">Average RTO rate in India</div></div>
+      <div class="hero-stat"><div class="num">2 min</div><div class="text">Setup time</div></div>
+      <div class="hero-stat"><div class="num">0</div><div class="text">Extra integrations needed</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="problem">
+  <div class="problem-inner">
+    <div class="section-label">The problem</div>
+    <div class="section-title">COD returns are killing Indian D2C brands</div>
+    <div class="section-sub">Every returned COD order costs you 2x — shipping both ways + lost revenue. Here's the reality:</div>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="icon" style="background:#FEE2E2;color:#DC2626"><i class="fas fa-truck-ramp-box"></i></div>
+        <div class="stat" style="color:#DC2626">39%</div>
+        <h3>RTO Rate</h3>
+        <p>Nearly 4 out of 10 COD orders come back. That's money down the drain.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon" style="background:#FEF3C7;color:#D97706"><i class="fas fa-indian-rupee-sign"></i></div>
+        <div class="stat" style="color:#D97706">₹2,500 Cr</div>
+        <h3>Annual Loss</h3>
+        <p>Indian e-commerce loses thousands of crores every year to returns & RTOs.</p>
+      </div>
+      <div class="problem-card">
+        <div class="icon" style="background:#E0F2FE;color:#0284C7"><i class="fas fa-clock"></i></div>
+        <div class="stat" style="color:#0284C7">15+ hrs</div>
+        <h3>Weekly Time Waste</h3>
+        <p>Manually managing returns, refunds & pickups eats your team's time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="features-inner">
+    <div class="section-label">Features</div>
+    <div class="section-title">Everything you need to manage returns</div>
+    <div class="section-sub">One dashboard to handle all returns, exchanges, and refunds automatically.</div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-display"></i></div>
+        <h3>Self-service return portal</h3>
+        <p>Branded return page for your customers. They submit requests in 3 clicks — no WhatsApp messages, no calls.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-robot"></i></div>
+        <h3>Auto-approve rules</h3>
+        <p>Set rules to auto-approve returns under a certain amount. Save time on small-value returns.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-indian-rupee-sign"></i></div>
+        <h3>Any payment gateway</h3>
+        <p>Works with Razorpay, Paytm, PhonePe, Cashfree — any gateway. Refunds go through Shopify automatically.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-truck"></i></div>
+        <h3>Any courier partner</h3>
+        <p>Shiprocket, Delhivery, BlueDart, Ecom Express — connect your preferred shipping aggregator.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fab fa-whatsapp"></i></div>
+        <h3>WhatsApp notifications</h3>
+        <p>Auto-notify customers on WhatsApp at every step — request received, approved, pickup scheduled, refund done.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-chart-line"></i></div>
+        <h3>Analytics dashboard</h3>
+        <p>See return rates, top reasons, refund amounts, and trends. Make data-driven decisions to reduce returns.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-exchange-alt"></i></div>
+        <h3>Exchange instead of refund</h3>
+        <p>Offer exchanges to retain revenue. Customer picks a new size/color — you keep the sale.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-store"></i></div>
+        <h3>Store credit option</h3>
+        <p>Offer store credit as refund option. Customers come back, you retain revenue.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon"><i class="fas fa-bolt"></i></div>
+        <h3>2-minute setup</h3>
+        <p>Install from Shopify App Store, connect your store — done. No coding, no developer needed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="how-inner">
+    <div class="section-label">How it works</div>
+    <div class="section-title">Live in 4 simple steps</div>
+    <div class="section-sub">From install to first return — under 5 minutes.</div>
+    <div class="steps">
+      <div class="step-card">
+        <div class="num">1</div>
+        <h3>Install the app</h3>
+        <p>One-click install from Shopify App Store. Free to start.</p>
+      </div>
+      <div class="step-card">
+        <div class="num">2</div>
+        <h3>Connect your store</h3>
+        <p>Grant permissions and your orders sync automatically.</p>
+      </div>
+      <div class="step-card">
+        <div class="num">3</div>
+        <h3>Share return page</h3>
+        <p>Get a branded return portal link. Add it to your site or share directly.</p>
+      </div>
+      <div class="step-card">
+        <div class="num">4</div>
+        <h3>Manage returns</h3>
+        <p>Approve, reject, schedule pickups, and process refunds from one dashboard.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="pricing" id="pricing">
+  <div class="pricing-inner">
+    <div class="section-label">Pricing</div>
+    <div class="section-title">Simple, transparent pricing</div>
+    <div class="section-sub">Start free. Upgrade when you grow.</div>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <div class="plan-name">Starter</div>
+        <div class="plan-desc">For small stores</div>
+        <div class="price">₹999<span>/mo</span></div>
+        <div class="price-period">Up to 50 returns/month</div>
+        <ul>
+          <li><i class="fas fa-check"></i> Self-service return portal</li>
+          <li><i class="fas fa-check"></i> Dashboard & analytics</li>
+          <li><i class="fas fa-check"></i> Email notifications</li>
+          <li><i class="fas fa-check"></i> Shopify auto-refund</li>
+          <li><i class="fas fa-check"></i> 1 store</li>
+        </ul>
+        <button class="pricing-btn outline" onclick="window.location.href='https://taskly-returns-production.up.railway.app'">Get started</button>
+      </div>
+      <div class="pricing-card popular">
+        <div class="plan-name">Growth</div>
+        <div class="plan-desc">For growing brands</div>
+        <div class="price">₹1,999<span>/mo</span></div>
+        <div class="price-period">Up to 200 returns/month</div>
+        <ul>
+          <li><i class="fas fa-check"></i> Everything in Starter</li>
+          <li><i class="fas fa-check"></i> WhatsApp notifications</li>
+          <li><i class="fas fa-check"></i> Shiprocket integration</li>
+          <li><i class="fas fa-check"></i> Auto-approve rules</li>
+          <li><i class="fas fa-check"></i> Exchange support</li>
+          <li><i class="fas fa-check"></i> 3 stores</li>
+        </ul>
+        <button class="pricing-btn primary" onclick="window.location.href='https://taskly-returns-production.up.railway.app'">Get started</button>
+      </div>
+      <div class="pricing-card">
+        <div class="plan-name">Pro</div>
+        <div class="plan-desc">For large operations</div>
+        <div class="price">₹4,999<span>/mo</span></div>
+        <div class="price-period">Unlimited returns</div>
+        <ul>
+          <li><i class="fas fa-check"></i> Everything in Growth</li>
+          <li><i class="fas fa-check"></i> Multiple courier support</li>
+          <li><i class="fas fa-check"></i> Custom branding</li>
+          <li><i class="fas fa-check"></i> Priority support</li>
+          <li><i class="fas fa-check"></i> API access</li>
+          <li><i class="fas fa-check"></i> Unlimited stores</li>
+        </ul>
+        <button class="pricing-btn outline" onclick="window.location.href='https://taskly-returns-production.up.railway.app'">Contact sales</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="social-proof">
+  <div class="social-inner">
+    <div class="section-label">Trusted by</div>
+    <div class="section-title">Built for Indian D2C brands</div>
+    <div class="section-sub">Join hundreds of Shopify stores automating their returns process.</div>
+    <div class="brands">
+      <span>Shopify</span>
+      <span>Shiprocket</span>
+      <span>Razorpay</span>
+      <span>WhatsApp</span>
+      <span>Delhivery</span>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="cta-inner">
+    <h2>Ready to fix your returns?</h2>
+    <p>Join Indian D2C brands saving time & money with automated returns management.</p>
+    <a href="https://taskly-returns-production.up.railway.app" class="cta-btn"><i class="fas fa-rocket"></i> Install free on Shopify</a>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-logo"><i class="fas fa-rotate-left"></i> Taskly Returns</div>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="mailto:ajeetkumar.saas@gmail.com">Contact</a>
+    </div>
+    <div>&copy; 2025 Taskly Returns. All rights reserved.</div>
+  </div>
+</footer>
+
+</body>
+</html>
