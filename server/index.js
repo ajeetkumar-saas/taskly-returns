@@ -429,10 +429,95 @@ app.get('/api/shiprocket/couriers', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '2.1.0', shiprocket: !!SHIPROCKET_EMAIL }));
+// Admin APIs
+const ADMIN_KEY = process.env.ADMIN_KEY || 'taskly2026admin';
+
+function checkAdmin(req, res) {
+  const key = req.body?.admin_key || req.query?.admin_key;
+  if (key !== ADMIN_KEY) { res.status(403).json({ error: 'Unauthorized' }); return false; }
+  return true;
+}
+
+app.post('/api/admin/change-plan', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const { shop, plan } = req.body;
+  await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan, shop]);
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/free-access', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const { shop, plan, duration_days } = req.body;
+  await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan || 'free', shop]);
+  res.json({ ok: true, shop, plan, duration_days });
+});
+
+app.get('/api/admin/offers', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS offers (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(50) UNIQUE NOT NULL,
+      type VARCHAR(50) DEFAULT 'percent',
+      value INTEGER DEFAULT 0,
+      max_uses INTEGER DEFAULT 100,
+      used INTEGER DEFAULT 0,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('SELECT * FROM offers ORDER BY created_at DESC');
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/offers', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const { code, type, value, max_uses } = req.body;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS offers (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(50) UNIQUE NOT NULL,
+      type VARCHAR(50) DEFAULT 'percent',
+      value INTEGER DEFAULT 0,
+      max_uses INTEGER DEFAULT 100,
+      used INTEGER DEFAULT 0,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('INSERT INTO offers (code,type,value,max_uses) VALUES ($1,$2,$3,$4) RETURNING *', [code, type, value||0, max_uses||100]);
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/admin/offers/:id', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const { active } = req.body;
+  const r = await pool.query('UPDATE offers SET active=$1 WHERE id=$2 RETURNING *', [active, req.params.id]);
+  res.json(r.rows[0]);
+});
+
+app.post('/api/offers/redeem', async (req, res) => {
+  const { code, shop } = req.body;
+  if (!code || !shop) return res.status(400).json({ error: 'code and shop required' });
+  try {
+    const r = await pool.query('SELECT * FROM offers WHERE code=$1 AND active=true', [code.toUpperCase()]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Invalid or expired offer code' });
+    const offer = r.rows[0];
+    if (offer.used >= offer.max_uses) return res.status(400).json({ error: 'Offer code limit reached' });
+    let newPlan = 'starter';
+    if (offer.type === 'free_forever') newPlan = 'free';
+    else if (offer.type === 'free_months') newPlan = 'growth';
+    else newPlan = 'starter';
+    await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [newPlan, shop]);
+    await pool.query('UPDATE offers SET used=used+1 WHERE id=$1', [offer.id]);
+    res.json({ ok: true, message: `Offer "${code}" applied! Plan: ${newPlan}`, plan: newPlan });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '2.2.0', shiprocket: !!SHIPROCKET_EMAIL }));
 
 app.use(express.static(path.join(__dirname, '../client/build')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 
 const PORT = process.env.PORT || 3001;
-initDB().then(() => app.listen(PORT, () => console.log('Taskly Returns v2.0 running on port ' + PORT)));
+initDB().then(() => app.listen(PORT, () => console.log('Taskly Returns v2.2 running on port ' + PORT)));

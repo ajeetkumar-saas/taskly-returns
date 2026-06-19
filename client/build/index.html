@@ -109,6 +109,7 @@ tbody tr:hover{background:var(--gray-50)}
     <div class="nav-item" onclick="showPage('orders')"><i class="fas fa-shopping-bag"></i> Orders</div>
     <div class="nav-item" onclick="showPage('stores')"><i class="fas fa-store"></i> Stores</div>
     <div class="nav-item" onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</div>
+    <div class="nav-item" onclick="showPage('admin')" id="adminNav" style="display:none"><i class="fas fa-shield-halved"></i> Admin Panel</div>
   </nav>
   <div style="padding:16px;border-top:1px solid rgba(255,255,255,0.1)">
     <div style="font-size:11px;color:var(--gray-400)">Taskly Returns v2.0</div>
@@ -232,6 +233,134 @@ tbody tr:hover{background:var(--gray-50)}
       </div>
     </div>
 
+    <!-- Admin Page -->
+    <div class="page" id="page-admin">
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="fas fa-shield-halved" style="color:var(--primary);margin-right:8px"></i>All Merchants</h3>
+          <button class="topbar-btn" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i> Refresh</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table>
+            <thead><tr><th>Store</th><th>Domain</th><th>Email</th><th>Plan</th><th>Connected</th><th>Action</th></tr></thead>
+            <tbody id="adminStoresTable"><tr><td colspan="6" class="empty-state"><i class="fas fa-store"></i><p>Loading merchants...</p></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="fas fa-gift" style="color:var(--warning);margin-right:8px"></i>Offer / Free Access</h3>
+        </div>
+        <div class="card-body">
+          <p style="color:var(--gray-600);font-size:13px;margin-bottom:16px">Kisi bhi seller ko free plan ya special offer do. Offer code generate karo ya direct store ko free access do.</p>
+
+          <div class="card" style="border:1px solid var(--gray-200);margin-bottom:16px">
+            <div class="card-header"><h3>Direct Free Access</h3></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Store Domain</label>
+                  <input type="text" id="freeStoreDomain" placeholder="store.myshopify.com">
+                </div>
+                <div class="form-group">
+                  <label>Plan</label>
+                  <select id="freePlan">
+                    <option value="starter">Starter (₹999)</option>
+                    <option value="growth">Growth (₹1,999)</option>
+                    <option value="pro">Pro (₹4,999)</option>
+                    <option value="free">Free (Lifetime)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Duration</label>
+                <select id="freeDuration">
+                  <option value="30">30 days free</option>
+                  <option value="90">90 days free</option>
+                  <option value="180">6 months free</option>
+                  <option value="365">1 year free</option>
+                  <option value="9999">Lifetime free</option>
+                </select>
+              </div>
+              <button class="topbar-btn" onclick="giveFreePlan()"><i class="fas fa-gift"></i> Give Free Access</button>
+            </div>
+          </div>
+
+          <div class="card" style="border:1px solid var(--gray-200)">
+            <div class="card-header"><h3>Generate Offer Code</h3></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Offer Code</label>
+                  <input type="text" id="offerCode" placeholder="WELCOME50">
+                </div>
+                <div class="form-group">
+                  <label>Discount Type</label>
+                  <select id="offerType">
+                    <option value="percent">Percentage Off</option>
+                    <option value="free_months">Free Months</option>
+                    <option value="free_forever">Free Forever</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Value</label>
+                  <input type="number" id="offerValue" placeholder="50 (% off or months free)">
+                </div>
+                <div class="form-group">
+                  <label>Max Uses</label>
+                  <input type="number" id="offerMaxUses" placeholder="100" value="100">
+                </div>
+              </div>
+              <button class="topbar-btn" onclick="createOffer()"><i class="fas fa-ticket"></i> Create Offer Code</button>
+            </div>
+          </div>
+
+          <div class="card" style="border:1px solid var(--gray-200);margin-top:16px">
+            <div class="card-header"><h3>Active Offers</h3></div>
+            <div class="card-body" style="padding:0">
+              <table>
+                <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Used</th><th>Max</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody id="offersTable"><tr><td colspan="7" class="empty-state"><i class="fas fa-ticket"></i><p>No offers yet</p></td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="fas fa-chart-bar" style="color:var(--info);margin-right:8px"></i>Admin Stats</h3>
+        </div>
+        <div class="card-body">
+          <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:var(--primary-light);color:var(--primary)"><i class="fas fa-store"></i></div>
+              <div class="stat-value" id="adminTotalStores">0</div>
+              <div class="stat-label">Total Merchants</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:var(--success-light);color:var(--success)"><i class="fas fa-indian-rupee-sign"></i></div>
+              <div class="stat-value" id="adminMRR">₹0</div>
+              <div class="stat-label">Monthly Revenue</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:var(--warning-light);color:var(--warning)"><i class="fas fa-rotate-left"></i></div>
+              <div class="stat-value" id="adminTotalReturns">0</div>
+              <div class="stat-label">Total Returns</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:var(--info-light);color:var(--info)"><i class="fas fa-ticket"></i></div>
+              <div class="stat-value" id="adminTotalOffers">0</div>
+              <div class="stat-label">Active Offers</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings Page -->
     <div class="page" id="page-settings">
       <div class="card">
@@ -337,9 +466,10 @@ function showPage(page) {
   document.getElementById('page-'+page).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   event.currentTarget.classList.add('active');
-  const titles = {dashboard:'Dashboard',returns:'Returns',orders:'Orders',stores:'Stores',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',returns:'Returns',orders:'Orders',stores:'Stores',settings:'Settings',admin:'Admin Panel'};
   document.getElementById('pageTitle').textContent = titles[page] || 'Dashboard';
   if (page === 'orders' && currentShop) loadOrders();
+  if (page === 'admin') { loadAllStores(); loadOffers(); }
 }
 
 function showAlert(msg, type) {
@@ -514,8 +644,105 @@ function formatDate(d) {
   return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
 }
 
+// Admin functions
+const ADMIN_KEY = 'taskly2026admin';
+let allOffers = [];
+
+function checkAdmin() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('admin') === ADMIN_KEY) {
+    localStorage.setItem('isAdmin', 'true');
+  }
+  if (localStorage.getItem('isAdmin') === 'true') {
+    document.getElementById('adminNav').style.display = 'flex';
+  }
+}
+
+async function loadAllStores() {
+  const r = await fetch('/api/shopify/stores');
+  const stores = await r.json();
+  const tb = document.getElementById('adminStoresTable');
+  document.getElementById('adminTotalStores').textContent = stores.length;
+  const planPrices = {starter:999,growth:1999,pro:4999,free:0};
+  const mrr = stores.reduce((s,st) => s + (planPrices[st.plan] || 999), 0);
+  document.getElementById('adminMRR').textContent = '₹' + mrr.toLocaleString('en-IN');
+  document.getElementById('adminTotalReturns').textContent = allReturns.length;
+  if (!stores.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty-state"><i class="fas fa-store"></i><p>No merchants yet</p></td></tr>';
+    return;
+  }
+  tb.innerHTML = stores.map(s => `<tr>
+    <td><strong>${s.store_name || '-'}</strong></td>
+    <td style="font-size:12px">${s.shop_domain}</td>
+    <td style="font-size:12px">${s.store_email || '-'}</td>
+    <td><span class="badge badge-${s.plan==='pro'?'approved':s.plan==='growth'?'processed':'pending'}">${(s.plan||'starter').toUpperCase()}</span></td>
+    <td style="font-size:12px;color:var(--gray-400)">${formatDate(s.created_at)}</td>
+    <td>
+      <select onchange="changePlan('${s.shop_domain}',this.value)" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
+        <option value="starter" ${s.plan==='starter'?'selected':''}>Starter</option>
+        <option value="growth" ${s.plan==='growth'?'selected':''}>Growth</option>
+        <option value="pro" ${s.plan==='pro'?'selected':''}>Pro</option>
+        <option value="free" ${s.plan==='free'?'selected':''}>Free</option>
+      </select>
+    </td>
+  </tr>`).join('');
+}
+
+async function changePlan(shop, plan) {
+  await fetch('/api/admin/change-plan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop,plan,admin_key:ADMIN_KEY}) });
+  showAlert(`${shop} plan changed to ${plan.toUpperCase()}!`, 'success');
+  loadAllStores();
+}
+
+async function giveFreePlan() {
+  const shop = document.getElementById('freeStoreDomain').value.trim();
+  const plan = document.getElementById('freePlan').value;
+  const duration = document.getElementById('freeDuration').value;
+  if (!shop) return showAlert('Store domain daalo', 'error');
+  await fetch('/api/admin/free-access', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop,plan,duration_days:parseInt(duration),admin_key:ADMIN_KEY}) });
+  showAlert(`${shop} ko ${plan.toUpperCase()} plan ${duration} din ke liye free diya!`, 'success');
+  document.getElementById('freeStoreDomain').value = '';
+  loadAllStores();
+}
+
+async function createOffer() {
+  const code = document.getElementById('offerCode').value.trim().toUpperCase();
+  const type = document.getElementById('offerType').value;
+  const value = document.getElementById('offerValue').value;
+  const max_uses = document.getElementById('offerMaxUses').value;
+  if (!code) return showAlert('Offer code daalo', 'error');
+  const r = await fetch('/api/admin/offers', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code,type,value:parseInt(value),max_uses:parseInt(max_uses),admin_key:ADMIN_KEY}) });
+  if (r.ok) { showAlert(`Offer "${code}" created!`, 'success'); document.getElementById('offerCode').value=''; loadOffers(); }
+  else showAlert('Error creating offer', 'error');
+}
+
+async function loadOffers() {
+  try {
+    const r = await fetch('/api/admin/offers?admin_key='+ADMIN_KEY);
+    allOffers = await r.json();
+    document.getElementById('adminTotalOffers').textContent = allOffers.filter(o=>o.active).length;
+    const tb = document.getElementById('offersTable');
+    if (!allOffers.length) { tb.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-ticket"></i><p>No offers yet</p></td></tr>'; return; }
+    tb.innerHTML = allOffers.map(o => `<tr>
+      <td><strong>${o.code}</strong></td>
+      <td>${o.type}</td>
+      <td>${o.type==='percent'?o.value+'%':o.type==='free_months'?o.value+' months':'Forever'}</td>
+      <td>${o.used||0}</td>
+      <td>${o.max_uses}</td>
+      <td><span class="badge badge-${o.active?'approved':'rejected'}">${o.active?'Active':'Inactive'}</span></td>
+      <td><button class="action-btn ${o.active?'reject':'approve'}" onclick="toggleOffer(${o.id},${!o.active})">${o.active?'Disable':'Enable'}</button></td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+
+async function toggleOffer(id, active) {
+  await fetch('/api/admin/offers/'+id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({active,admin_key:ADMIN_KEY}) });
+  loadOffers();
+}
+
 const params = new URLSearchParams(window.location.search);
 if (params.get('connected')) showAlert('Shopify store connected successfully!','success');
+checkAdmin();
 loadStores();
 loadReturns();
 </script>
