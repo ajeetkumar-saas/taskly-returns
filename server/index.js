@@ -138,8 +138,81 @@ app.get('/api/auth/callback', async (req, res) => {
       );
     }
 
-    res.redirect(`/?shop=${shop}&connected=true`);
+    const plan = req.query.plan || 'starter';
+    if (plan === 'free_trial') {
+      res.redirect(`/?shop=${shop}&connected=true`);
+    } else {
+      res.redirect(`/api/billing/create?shop=${shop}&plan=${plan}`);
+    }
   } catch(e) { res.status(500).send('OAuth error: ' + e.message); }
+});
+
+// Billing
+const PLANS = {
+  starter: { name: 'Starter', price: 999, returns: 50, trial_days: 7 },
+  growth: { name: 'Growth', price: 1999, returns: 200, trial_days: 7 },
+  pro: { name: 'Pro', price: 4999, returns: 999999, trial_days: 7 }
+};
+
+app.get('/api/billing/create', async (req, res) => {
+  const { shop, plan } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  const planData = PLANS[plan] || PLANS.starter;
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
+  try {
+    const r = await fetch(`https://${shop}/admin/api/2024-01/recurring_application_charges.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
+      body: JSON.stringify({
+        recurring_application_charge: {
+          name: `Taskly Returns - ${planData.name}`,
+          price: planData.price,
+          return_url: `${APP_URL}/api/billing/confirm?shop=${shop}&plan=${plan}`,
+          trial_days: planData.trial_days,
+          test: process.env.NODE_ENV !== 'production' || shop.includes('test')
+        }
+      })
+    });
+    const data = await r.json();
+    const charge = data.recurring_application_charge;
+    if (charge && charge.confirmation_url) {
+      res.redirect(charge.confirmation_url);
+    } else {
+      res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
+    }
+  } catch(e) {
+    res.redirect(`/?shop=${shop}&connected=true&billing=error`);
+  }
+});
+
+app.get('/api/billing/confirm', async (req, res) => {
+  const { shop, plan, charge_id } = req.query;
+  if (!shop || !charge_id) return res.redirect(`/?shop=${shop}&connected=true`);
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.redirect('/');
+  try {
+    const r = await fetch(`https://${shop}/admin/api/2024-01/recurring_application_charges/${charge_id}.json`, {
+      headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+    });
+    const data = await r.json();
+    const charge = data.recurring_application_charge;
+    if (charge && charge.status === 'accepted') {
+      await fetch(`https://${shop}/admin/api/2024-01/recurring_application_charges/${charge_id}/activate.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
+        body: JSON.stringify({ recurring_application_charge: { id: charge_id } })
+      });
+      await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan || 'starter', shop]);
+    }
+    res.redirect(`/?shop=${shop}&connected=true&plan=${plan}`);
+  } catch(e) {
+    res.redirect(`/?shop=${shop}&connected=true`);
+  }
+});
+
+app.get('/api/billing/plans', (req, res) => {
+  res.json(PLANS);
 });
 
 // Stores
