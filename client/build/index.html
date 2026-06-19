@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taskly Returns</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f5f7fa; color:#333; }
+.header { background:#5c6bc0; color:white; padding:16px 24px; display:flex; align-items:center; gap:12px; }
+.header h1 { font-size:20px; font-weight:600; }
+.badge { background:rgba(255,255,255,0.2); padding:4px 10px; border-radius:20px; font-size:12px; }
+.container { max-width:1200px; margin:0 auto; padding:24px; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
+.stat-card { background:white; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+.stat-card h3 { font-size:13px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
+.stat-card .value { font-size:32px; font-weight:700; color:#5c6bc0; }
+.stat-card .label { font-size:13px; color:#aaa; margin-top:4px; }
+.section { background:white; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.06); margin-bottom:20px; }
+.section h2 { font-size:16px; font-weight:600; margin-bottom:16px; }
+.connect-btn { background:#5c6bc0; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; }
+.connect-btn:hover { background:#3f51b5; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; padding:10px 12px; font-size:12px; color:#888; text-transform:uppercase; border-bottom:2px solid #f0f0f0; }
+td { padding:12px; font-size:14px; border-bottom:1px solid #f8f8f8; }
+.status { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+.status.pending { background:#fff3e0; color:#e65100; }
+.status.approved { background:#e8f5e9; color:#2e7d32; }
+.status.rejected { background:#ffebee; color:#c62828; }
+.status.processed { background:#e3f2fd; color:#1565c0; }
+.shop-input { display:flex; gap:10px; }
+.shop-input input { flex:1; padding:10px 14px; border:1px solid #ddd; border-radius:8px; font-size:14px; outline:none; }
+.alert { padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:14px; }
+.alert.success { background:#e8f5e9; color:#2e7d32; }
+.alert.error { background:#ffebee; color:#c62828; }
+select,input[type=text],input[type=number] { padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:14px; width:100%; margin-bottom:10px; outline:none; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.submit-btn { background:#5c6bc0; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; width:100%; margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="header"><h1>Taskly Returns</h1><span class="badge">COD Returns Manager</span></div>
+<div class="container">
+<div id="alert"></div>
+<div class="stats">
+  <div class="stat-card"><h3>Total Returns</h3><div class="value" id="t">-</div><div class="label">All time</div></div>
+  <div class="stat-card"><h3>Pending</h3><div class="value" id="p">-</div><div class="label">Awaiting action</div></div>
+  <div class="stat-card"><h3>Approved</h3><div class="value" id="a">-</div><div class="label">Ready for pickup</div></div>
+  <div class="stat-card"><h3>Processed</h3><div class="value" id="d">-</div><div class="label">Completed</div></div>
+</div>
+<div class="section">
+  <h2>Connect Shopify Store</h2>
+  <div id="stores"></div>
+  <div class="shop-input">
+    <input type="text" id="shopDomain" placeholder="yourstore.myshopify.com" />
+    <button class="connect-btn" onclick="connectShop()">Connect Store</button>
+  </div>
+</div>
+<div class="section">
+  <h2>Create Return Request</h2>
+  <div class="form-grid">
+    <input type="text" id="orderId" placeholder="Order ID (#1001)" />
+    <input type="text" id="custName" placeholder="Customer Name" />
+    <input type="text" id="custEmail" placeholder="Customer Email" />
+    <input type="text" id="prodName" placeholder="Product Name" />
+    <input type="number" id="amount" placeholder="Refund Amount (rupees)" />
+    <select id="reason"><option value="">Select Reason</option><option value="damaged">Damaged Product</option><option value="wrong_item">Wrong Item</option><option value="size_issue">Size Issue</option><option value="quality_issue">Quality Issue</option><option value="not_as_described">Not As Described</option><option value="changed_mind">Changed Mind</option></select>
+    <select id="refundMethod"><option value="cod">COD Refund (Cash)</option><option value="bank_transfer">Bank Transfer</option><option value="store_credit">Store Credit</option><option value="upi">UPI</option></select>
+  </div>
+  <button class="submit-btn" onclick="createReturn()">Submit Return Request</button>
+</div>
+<div class="section">
+  <h2>Returns</h2>
+  <table>
+    <thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Product</th><th>Reason</th><th>Refund</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody id="tbody"><tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">Loading...</td></tr></tbody>
+  </table>
+</div>
+</div>
+<script>
+function showAlert(msg,type){const e=document.getElementById('alert');e.innerHTML='<div class="alert '+type+'">'+msg+'</div>';setTimeout(()=>e.innerHTML='',4000);}
+async function loadReturns(){
+  const r=await fetch('/api/returns');const d=await r.json();
+  document.getElementById('t').textContent=d.length;
+  document.getElementById('p').textContent=d.filter(x=>x.status==='pending').length;
+  document.getElementById('a').textContent=d.filter(x=>x.status==='approved').length;
+  document.getElementById('d').textContent=d.filter(x=>x.status==='processed').length;
+  const tb=document.getElementById('tbody');
+  if(!d.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#aaa;padding:30px">No returns yet</td></tr>';return;}
+  tb.innerHTML=d.map(r=>'<tr><td>'+r.id+'</td><td><strong>'+(r.order_id||'-')+'</strong></td><td>'+(r.customer_name||'-')+'<br><small style="color:#aaa">'+(r.customer_email||'')+'</small></td><td>'+(r.product_name||'-')+'</td><td>'+(r.reason||'-')+'</td><td>'+(r.refund_method||'-')+'</td><td>Rs '+(Number(r.amount||0).toLocaleString('en-IN'))+'</td><td><span class="status '+(r.status||'')+'">'+(r.status||'')+'</span></td><td>'+(r.status==='pending'?'<button onclick="upd('+r.id+',\'approved\')" style="background:#e8f5e9;color:#2e7d32;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;margin-right:4px">Approve</button><button onclick="upd('+r.id+',\'rejected\')" style="background:#ffebee;color:#c62828;border:none;padding:4px 10px;border-radius:4px;cursor:pointer">Reject</button>':r.status==='approved'?'<button onclick="upd('+r.id+',\'processed\')" style="background:#e3f2fd;color:#1565c0;border:none;padding:4px 10px;border-radius:4px;cursor:pointer">Mark Processed</button>':'-')+'</td></tr>').join('');
+}
+async function loadStores(){const r=await fetch('/api/shopify/stores');const d=await r.json();if(d.length)document.getElementById('stores').innerHTML='<p style="margin-bottom:12px;color:#2e7d32;font-size:13px">Connected: '+d.map(s=>'<strong>'+s.shop_domain+'</strong>').join(', ')+'</p>';}
+function connectShop(){const s=document.getElementById('shopDomain').value.trim();if(!s)return showAlert('Store domain daalo','error');window.location.href='/api/auth/shopify?shop='+s;}
+async function createReturn(){
+  const data={order_id:document.getElementById('orderId').value,customer_name:document.getElementById('custName').value,customer_email:document.getElementById('custEmail').value,product_name:document.getElementById('prodName').value,amount:document.getElementById('amount').value,reason:document.getElementById('reason').value,refund_method:document.getElementById('refundMethod').value};
+  if(!data.customer_name)return showAlert('Customer name required','error');
+  const r=await fetch('/api/returns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(r.ok){showAlert('Return created!','success');loadReturns();}else showAlert('Error','error');
+}
+async function upd(id,status){await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});loadReturns();}
+const params=new URLSearchParams(window.location.search);
+if(params.get('connected'))showAlert('Shopify store connected!','success');
+loadStores();loadReturns();
+</script>
+</body>
+</html>
