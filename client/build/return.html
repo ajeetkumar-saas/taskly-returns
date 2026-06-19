@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Return Request - Taskly Returns</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--primary:#4F46E5;--primary-light:#EEF2FF;--primary-dark:#3730A3;--success:#059669;--success-light:#D1FAE5;--warning:#D97706;--warning-light:#FEF3C7;--danger:#DC2626;--danger-light:#FEE2E2;--gray-50:#F9FAFB;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-300:#D1D5DB;--gray-400:#9CA3AF;--gray-500:#6B7280;--gray-700:#374151;--gray-800:#1F2937;--radius:8px;--radius-lg:12px}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);color:var(--gray-800);min-height:100vh}
+.header{background:white;border-bottom:1px solid var(--gray-200);padding:16px 24px;text-align:center}
+.header h1{font-size:20px;font-weight:700;color:var(--primary);display:inline-flex;align-items:center;gap:8px}
+.header p{font-size:13px;color:var(--gray-500);margin-top:4px}
+.container{max-width:600px;margin:32px auto;padding:0 16px}
+.step{display:none}
+.step.active{display:block}
+.card{background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200);overflow:hidden}
+.card-header{padding:20px;border-bottom:1px solid var(--gray-200)}
+.card-header h2{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card-header h2 .step-num{width:28px;height:28px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:13px}
+.card-header p{font-size:13px;color:var(--gray-500);margin-top:4px;margin-left:36px}
+.card-body{padding:20px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:13px;font-weight:600;color:var(--gray-700);margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 14px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:14px;outline:none;transition:border 0.15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,0.1)}
+.btn{padding:10px 20px;border-radius:var(--radius);font-size:14px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:all 0.15s}
+.btn-primary{background:var(--primary);color:white}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-secondary{background:white;color:var(--gray-700);border:1px solid var(--gray-300)}
+.btn-secondary:hover{background:var(--gray-50)}
+.btn-full{width:100%;justify-content:center}
+.btn-group{display:flex;gap:8px;margin-top:20px}
+.order-info{background:var(--gray-50);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.order-info .row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px}
+.order-info .row .label{color:var(--gray-500)}
+.order-info .row .value{font-weight:600}
+.product-item{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;cursor:pointer;transition:all 0.15s}
+.product-item:hover{border-color:var(--primary);background:var(--primary-light)}
+.product-item.selected{border-color:var(--primary);background:var(--primary-light)}
+.product-item .checkbox{width:20px;height:20px;border:2px solid var(--gray-300);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;color:white;flex-shrink:0}
+.product-item.selected .checkbox{background:var(--primary);border-color:var(--primary)}
+.product-item .details{flex:1}
+.product-item .details .name{font-size:14px;font-weight:500}
+.product-item .details .meta{font-size:12px;color:var(--gray-500);margin-top:2px}
+.product-item .price{font-weight:600;font-size:14px}
+.success-box{text-align:center;padding:40px 20px}
+.success-box .icon{width:64px;height:64px;border-radius:50%;background:var(--success-light);color:var(--success);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px}
+.success-box h2{font-size:20px;margin-bottom:8px}
+.success-box p{color:var(--gray-500);font-size:14px;margin-bottom:4px}
+.success-box .return-id{font-size:24px;font-weight:700;color:var(--primary);margin:12px 0}
+.track-box{background:var(--primary-light);border-radius:var(--radius);padding:16px;margin-top:20px;font-size:13px;color:var(--primary)}
+.progress-bar{display:flex;justify-content:center;gap:0;margin-bottom:32px}
+.progress-step{display:flex;flex-direction:column;align-items:center;position:relative;flex:1}
+.progress-step .dot{width:32px;height:32px;border-radius:50%;background:var(--gray-200);color:var(--gray-400);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;position:relative;z-index:1}
+.progress-step.active .dot{background:var(--primary);color:white}
+.progress-step.done .dot{background:var(--success);color:white}
+.progress-step .text{font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center}
+.progress-step.active .text{color:var(--primary);font-weight:600}
+.progress-step.done .text{color:var(--success)}
+.progress-step:not(:last-child)::after{content:'';position:absolute;top:16px;left:calc(50% + 16px);width:calc(100% - 32px);height:2px;background:var(--gray-200)}
+.progress-step.done:not(:last-child)::after{background:var(--success)}
+.alert{padding:12px 16px;border-radius:var(--radius);margin-bottom:16px;font-size:13px;display:flex;align-items:center;gap:8px}
+.alert-error{background:var(--danger-light);color:var(--danger)}
+.loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px;color:var(--gray-500);font-size:14px}
+.footer{text-align:center;padding:24px;font-size:12px;color:var(--gray-400)}
+.footer a{color:var(--primary)}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1><i class="fas fa-rotate-left"></i> Return & Exchange Portal</h1>
+  <p>Submit your return request in 3 easy steps</p>
+</div>
+
+<div class="container">
+  <div class="progress-bar">
+    <div class="progress-step active" id="prog1"><div class="dot">1</div><div class="text">Find order</div></div>
+    <div class="progress-step" id="prog2"><div class="dot">2</div><div class="text">Select items</div></div>
+    <div class="progress-step" id="prog3"><div class="dot">3</div><div class="text">Confirm</div></div>
+  </div>
+
+  <div id="alertBox"></div>
+
+  <!-- Step 1: Find Order -->
+  <div class="step active" id="step1">
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="step-num">1</span> Find your order</h2>
+        <p>Enter your order number and email to get started</p>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label>Order Number</label>
+          <input type="text" id="orderNum" placeholder="#1001 or ORD-1001">
+        </div>
+        <div class="form-group">
+          <label>Email address</label>
+          <input type="email" id="orderEmail" placeholder="you@example.com">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="lookupOrder()"><i class="fas fa-search"></i> Find my order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Select Products -->
+  <div class="step" id="step2">
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="step-num">2</span> Select items to return</h2>
+        <p>Choose the products you want to return</p>
+      </div>
+      <div class="card-body">
+        <div class="order-info" id="orderDetails"></div>
+        <div id="productList"></div>
+        <div class="form-group" style="margin-top:16px">
+          <label>Reason for return</label>
+          <select id="returnReason">
+            <option value="">Select a reason</option>
+            <option value="damaged">Damaged product</option>
+            <option value="wrong_item">Wrong item received</option>
+            <option value="size_issue">Size/fit issue</option>
+            <option value="quality_issue">Quality not as expected</option>
+            <option value="not_as_described">Not as described</option>
+            <option value="changed_mind">Changed my mind</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Additional details (optional)</label>
+          <textarea id="returnDetails" rows="3" placeholder="Tell us more about the issue..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Preferred refund method</label>
+          <select id="returnRefund">
+            <option value="original">Original payment method</option>
+            <option value="bank_transfer">Bank transfer</option>
+            <option value="upi">UPI</option>
+            <option value="store_credit">Store credit</option>
+          </select>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="goStep(1)"><i class="fas fa-arrow-left"></i> Back</button>
+          <button class="btn btn-primary" style="flex:1" onclick="goStep(3)">Continue <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Confirm -->
+  <div class="step" id="step3">
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="step-num">3</span> Confirm your return</h2>
+        <p>Review the details before submitting</p>
+      </div>
+      <div class="card-body">
+        <div id="confirmDetails"></div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="goStep(2)"><i class="fas fa-arrow-left"></i> Back</button>
+          <button class="btn btn-primary" style="flex:1" onclick="submitReturn()"><i class="fas fa-check"></i> Submit return request</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Success -->
+  <div class="step" id="step4">
+    <div class="card">
+      <div class="card-body">
+        <div class="success-box">
+          <div class="icon"><i class="fas fa-check"></i></div>
+          <h2>Return request submitted!</h2>
+          <p>Your return ID is</p>
+          <div class="return-id" id="returnId">#--</div>
+          <p>We'll review your request and get back to you within 24-48 hours.</p>
+          <div class="track-box">
+            <i class="fas fa-info-circle"></i> You'll receive updates on WhatsApp and email. Keep your return ID safe for tracking.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Powered by <a href="#">Taskly Returns</a> &middot; Hassle-free returns for Indian brands
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const shop = params.get('shop') || '';
+let orderData = null;
+let selectedProducts = [];
+
+function showAlert(msg) {
+  document.getElementById('alertBox').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>${msg}</div>`;
+  setTimeout(() => document.getElementById('alertBox').innerHTML = '', 5000);
+}
+
+function goStep(n) {
+  if (n === 3) {
+    if (!selectedProducts.length) return showAlert('Please select at least one product');
+    if (!document.getElementById('returnReason').value) return showAlert('Please select a reason');
+    renderConfirm();
+  }
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById('step'+n).classList.add('active');
+  for (let i = 1; i <= 3; i++) {
+    const el = document.getElementById('prog'+i);
+    el.classList.remove('active','done');
+    if (i < n) el.classList.add('done');
+    if (i === n) el.classList.add('active');
+  }
+}
+
+async function lookupOrder() {
+  const num = document.getElementById('orderNum').value.trim();
+  const email = document.getElementById('orderEmail').value.trim();
+  if (!num) return showAlert('Please enter your order number');
+  if (!email) return showAlert('Please enter your email');
+  if (!shop) return showAlert('Invalid return link. Please contact the store.');
+
+  const btn = event.currentTarget;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Searching...';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch(`/api/shopify/order-lookup?shop=${shop}&order_number=${encodeURIComponent(num)}&email=${encodeURIComponent(email)}`);
+    if (!r.ok) {
+      const err = await r.json();
+      showAlert(err.error || 'Order not found. Please check your details.');
+      return;
+    }
+    orderData = await r.json();
+    renderOrderDetails();
+    goStep(2);
+  } catch(e) {
+    showAlert('Something went wrong. Please try again.');
+  } finally {
+    btn.innerHTML = '<i class="fas fa-search"></i> Find my order';
+    btn.disabled = false;
+  }
+}
+
+function renderOrderDetails() {
+  document.getElementById('orderDetails').innerHTML = `
+    <div class="row"><span class="label">Order</span><span class="value">${orderData.order_number}</span></div>
+    <div class="row"><span class="label">Customer</span><span class="value">${orderData.customer_name}</span></div>
+    <div class="row"><span class="label">Date</span><span class="value">${new Date(orderData.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></div>
+    <div class="row"><span class="label">Total</span><span class="value">₹${Number(orderData.total_price).toLocaleString('en-IN')}</span></div>
+  `;
+  const list = document.getElementById('productList');
+  list.innerHTML = orderData.line_items.map((item, i) => `
+    <div class="product-item" onclick="toggleProduct(${i},this)">
+      <div class="checkbox"><i class="fas fa-check"></i></div>
+      <div class="details">
+        <div class="name">${item.title}</div>
+        <div class="meta">${item.variant_title ? item.variant_title + ' · ' : ''}Qty: ${item.quantity}${item.sku ? ' · SKU: '+item.sku : ''}</div>
+      </div>
+      <div class="price">₹${Number(item.price).toLocaleString('en-IN')}</div>
+    </div>
+  `).join('');
+  selectedProducts = [];
+}
+
+function toggleProduct(idx, el) {
+  el.classList.toggle('selected');
+  if (el.classList.contains('selected')) {
+    selectedProducts.push(orderData.line_items[idx]);
+  } else {
+    selectedProducts = selectedProducts.filter(p => p.id !== orderData.line_items[idx].id);
+  }
+}
+
+function renderConfirm() {
+  const reason = document.getElementById('returnReason');
+  const refund = document.getElementById('returnRefund');
+  const totalAmount = selectedProducts.reduce((s, p) => s + parseFloat(p.price) * p.quantity, 0);
+  document.getElementById('confirmDetails').innerHTML = `
+    <div class="order-info">
+      <div class="row"><span class="label">Order</span><span class="value">${orderData.order_number}</span></div>
+      <div class="row"><span class="label">Customer</span><span class="value">${orderData.customer_name}</span></div>
+      <div class="row"><span class="label">Items</span><span class="value">${selectedProducts.map(p=>p.title).join(', ')}</span></div>
+      <div class="row"><span class="label">Reason</span><span class="value">${reason.options[reason.selectedIndex].text}</span></div>
+      <div class="row"><span class="label">Refund method</span><span class="value">${refund.options[refund.selectedIndex].text}</span></div>
+      <div class="row" style="border-top:1px solid var(--gray-200);margin-top:8px;padding-top:8px"><span class="label" style="font-weight:600">Refund amount</span><span class="value" style="color:var(--primary);font-size:16px">₹${Math.round(totalAmount).toLocaleString('en-IN')}</span></div>
+    </div>
+  `;
+}
+
+async function submitReturn() {
+  const totalAmount = selectedProducts.reduce((s, p) => s + parseFloat(p.price) * p.quantity, 0);
+  const data = {
+    order_id: String(orderData.id),
+    order_number: orderData.order_number,
+    customer_name: orderData.customer_name,
+    customer_email: orderData.email,
+    customer_phone: orderData.phone || '',
+    product_name: selectedProducts.map(p => p.title).join(', '),
+    product_sku: selectedProducts.map(p => p.sku).filter(Boolean).join(', '),
+    quantity: selectedProducts.reduce((s, p) => s + p.quantity, 0),
+    reason: document.getElementById('returnReason').value,
+    reason_detail: document.getElementById('returnDetails').value,
+    refund_method: document.getElementById('returnRefund').value,
+    amount: totalAmount,
+    shop_domain: shop
+  };
+
+  const btn = event.currentTarget;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/api/returns', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+    const result = await r.json();
+    document.getElementById('returnId').textContent = '#' + result.id;
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById('step4').classList.add('active');
+    document.querySelectorAll('.progress-step').forEach(s => { s.classList.remove('active'); s.classList.add('done'); });
+  } catch(e) {
+    showAlert('Failed to submit return. Please try again.');
+    btn.innerHTML = '<i class="fas fa-check"></i> Submit return request';
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
