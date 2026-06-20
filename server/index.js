@@ -575,6 +575,46 @@ app.get('/api/returns/export', async (req, res) => {
 });
 
 // Store settings
+// Portal customization API (public - no auth needed)
+app.get('/api/portal-settings', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.json({});
+  try {
+    const store = await pool.query('SELECT store_name, portal_color FROM shopify_stores WHERE shop_domain=$1', [shop]);
+    const settings = await pool.query('SELECT * FROM store_settings WHERE shop_domain=$1', [shop]);
+    const s = store.rows[0] || {};
+    const ss = settings.rows[0] || {};
+    res.json({
+      store_name: s.store_name || shop.replace('.myshopify.com', ''),
+      color: s.portal_color || '#4F46E5',
+      heading: ss.portal_heading || 'Return & Exchange Portal',
+      subheading: ss.portal_subheading || 'Submit your return request in 3 easy steps',
+      logo_url: ss.portal_logo || '',
+      return_reasons: ss.return_reasons || 'Damaged Product,Wrong Item Received,Size/Fit Issue,Quality Not As Expected,Not As Described,Changed My Mind',
+      exchange_reasons: ss.exchange_reasons || 'Wrong Size,Wrong Color,Want Different Product',
+      exchange_enabled: ss.exchange_enabled !== false,
+      refund_methods: ss.refund_methods || 'Original Payment Method,Bank Transfer,Store Credit,UPI'
+    });
+  } catch(e) { res.json({}); }
+});
+
+// Save portal customization
+app.post('/api/portal-settings', async (req, res) => {
+  const { shop, heading, subheading, logo_url, exchange_enabled } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  try {
+    await pool.query(`ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS portal_heading TEXT DEFAULT 'Return & Exchange Portal'`);
+    await pool.query(`ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS portal_subheading TEXT DEFAULT 'Submit your return request in 3 easy steps'`);
+    await pool.query(`ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS portal_logo TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS exchange_enabled BOOLEAN DEFAULT true`);
+    await pool.query(
+      `INSERT INTO store_settings (shop_domain, portal_heading, portal_subheading, portal_logo, exchange_enabled)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (shop_domain) DO UPDATE SET portal_heading=$2, portal_subheading=$3, portal_logo=$4, exchange_enabled=$5`,
+      [shop, heading||'Return & Exchange Portal', subheading||'Submit your return request in 3 easy steps', logo_url||'', exchange_enabled!==false]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/settings', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });

@@ -11,7 +11,8 @@
 :root{--primary:#4F46E5;--primary-light:#EEF2FF;--primary-dark:#3730A3;--success:#059669;--success-light:#D1FAE5;--warning:#D97706;--warning-light:#FEF3C7;--danger:#DC2626;--danger-light:#FEE2E2;--gray-50:#F9FAFB;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-300:#D1D5DB;--gray-400:#9CA3AF;--gray-500:#6B7280;--gray-700:#374151;--gray-800:#1F2937;--radius:8px;--radius-lg:12px}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);color:var(--gray-800);min-height:100vh}
 .header{background:white;border-bottom:1px solid var(--gray-200);padding:16px 24px;text-align:center}
-.header h1{font-size:20px;font-weight:700;color:var(--primary);display:inline-flex;align-items:center;gap:8px}
+.header h1{font-size:20px;font-weight:700;color:var(--portal-color, var(--primary));display:inline-flex;align-items:center;gap:8px}
+.header .logo{max-height:40px;margin-bottom:4px}
 .header p{font-size:13px;color:var(--gray-500);margin-top:4px}
 .container{max-width:600px;margin:32px auto;padding:0 16px}
 .step{display:none}
@@ -71,8 +72,9 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 </head>
 <body>
 <div class="header">
-  <h1><i class="fas fa-rotate-left"></i> Return & Exchange Portal</h1>
-  <p>Submit your return request in 3 easy steps</p>
+  <div id="portalLogo"></div>
+  <h1 id="portalHeading"><i class="fas fa-rotate-left"></i> Return & Exchange Portal</h1>
+  <p id="portalSubheading">Submit your return request in 3 easy steps</p>
 </div>
 
 <div class="container">
@@ -222,6 +224,29 @@ const shop = params.get('shop') || '';
 let orderData = null;
 let uploadedImages = [];
 let returnType = 'return';
+
+async function loadPortalSettings() {
+  if (!shop) return;
+  try {
+    const r = await fetch('/api/portal-settings?shop=' + shop);
+    const s = await r.json();
+    if (s.color) { document.documentElement.style.setProperty('--portal-color', s.color); document.querySelectorAll('.btn-primary,.progress-step.active .dot,.progress-step.done .dot,.step-num').forEach(el => el.style.background = s.color); }
+    if (s.heading) document.getElementById('portalHeading').innerHTML = '<i class="fas fa-rotate-left"></i> ' + s.heading;
+    if (s.subheading) document.getElementById('portalSubheading').textContent = s.subheading;
+    if (s.logo_url) document.getElementById('portalLogo').innerHTML = '<img src="' + s.logo_url + '" class="logo" alt="Store logo">';
+    if (s.store_name) document.title = 'Return Request - ' + s.store_name;
+    if (s.return_reasons) {
+      const sel = document.getElementById('returnReason');
+      sel.innerHTML = '<option value="">Select a reason</option>' + s.return_reasons.split(',').map(r => '<option value="' + r.trim().toLowerCase().replace(/\s+/g, '_') + '">' + r.trim() + '</option>').join('');
+    }
+    if (s.exchange_enabled === false) { document.getElementById('optExchange').style.display = 'none'; }
+    if (s.refund_methods) {
+      const sel = document.getElementById('returnRefund');
+      sel.innerHTML = s.refund_methods.split(',').map(m => '<option value="' + m.trim().toLowerCase().replace(/\s+/g, '_') + '">' + m.trim() + '</option>').join('');
+    }
+  } catch(e) {}
+}
+loadPortalSettings();
 
 function selectType(type) {
   returnType = type;
