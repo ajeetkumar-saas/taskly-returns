@@ -397,6 +397,119 @@ app.get('/api/analytics', async (req, res) => {
   res.json({ daily: daily.rows, by_reason: byReason.rows, by_status: byStatus.rows });
 });
 
+// Order Analytics — fetch all orders from Shopify and analyze
+app.get('/api/analytics/orders', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
+  try {
+    const r = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=250`, {
+      headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+    });
+    const d = await r.json();
+    const orders = d.orders || [];
+
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((s, o) => s + parseFloat(o.total_price || 0), 0);
+    const codOrders = orders.filter(o => o.gateway === 'Cash on Delivery (COD)' || o.payment_gateway_names?.some(g => g.toLowerCase().includes('cod'))).length;
+    const prepaidOrders = totalOrders - codOrders;
+
+    const byCity = {};
+    const byState = {};
+    const byPincode = {};
+    orders.forEach(o => {
+      const addr = o.shipping_address || o.billing_address || {};
+      const city = addr.city || 'Unknown';
+      const state = addr.province || 'Unknown';
+      const pin = addr.zip || 'Unknown';
+      byCity[city] = (byCity[city] || 0) + 1;
+      byState[state] = (byState[state] || 0) + 1;
+      byPincode[pin] = (byPincode[pin] || 0) + 1;
+    });
+
+    const byProduct = {};
+    orders.forEach(o => {
+      (o.line_items || []).forEach(li => {
+        const name = li.title || 'Unknown';
+        if (!byProduct[name]) byProduct[name] = { sold: 0, revenue: 0 };
+        byProduct[name].sold += li.quantity;
+        byProduct[name].revenue += parseFloat(li.price) * li.quantity;
+      });
+    });
+
+    const byDate = {};
+    orders.forEach(o => {
+      const d = new Date(o.created_at).toISOString().split('T')[0];
+      if (!byDate[d]) byDate[d] = { count: 0, revenue: 0 };
+      byDate[d].count++;
+      byDate[d].revenue += parseFloat(o.total_price || 0);
+    });
+
+    const topCities = Object.entries(byCity).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([city, count]) => ({ city, count }));
+    const topStates = Object.entries(byState).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([state, count]) => ({ state, count }));
+    const topPincodes = Object.entries(byPincode).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([pincode, count]) => ({ pincode, count }));
+    const topProducts = Object.entries(byProduct).sort((a, b) => b[1].sold - a[1].sold).slice(0, 20).map(([name, data]) => ({ name, sold: data.sold, revenue: Math.round(data.revenue) }));
+    const dailyOrders = Object.entries(byDate).sort((a, b) => a[0].localeCompare(b[0])).slice(-30).map(([date, data]) => ({ date, count: data.count, revenue: Math.round(data.revenue) }));
+
+    res.json({
+      total_orders: totalOrders, total_revenue: Math.round(totalRevenue),
+      cod_orders: codOrders, prepaid_orders: prepaidOrders,
+      cod_percent: totalOrders ? Math.round(codOrders / totalOrders * 100) : 0,
+      top_cities: topCities, top_states: topStates, top_pincodes: topPincodes,
+      top_products: topProducts, daily_orders: dailyOrders
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Return Analytics by location and product
+app.get('/api/analytics/returns-deep', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.json({ by_product: [], by_city: [] });
+  try {
+    const ordersResp = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=250`, {
+      headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+    });
+    const ordersData = await ordersResp.json();
+    const orders = ordersData.orders || [];
+    const orderMap = {};
+    orders.forEach(o => {
+      orderMap[o.name] = o;
+      orderMap[String(o.id)] = o;
+    });
+
+    const returns = await pool.query('SELECT * FROM returns WHERE shop_domain=$1', [shop]);
+    const byProduct = {};
+    const byCity = {};
+    const byPincode = {};
+
+    returns.rows.forEach(ret => {
+      const prod = ret.product_name || 'Unknown';
+      if (!byProduct[prod]) byProduct[prod] = { returns: 0, exchanges: 0, amount: 0 };
+      if (ret.type === 'exchange') byProduct[prod].exchanges++;
+      else byProduct[prod].returns++;
+      byProduct[prod].amount += parseFloat(ret.amount || 0);
+
+      const order = orderMap[ret.order_number] || orderMap[ret.order_id];
+      if (order) {
+        const addr = order.shipping_address || order.billing_address || {};
+        const city = addr.city || 'Unknown';
+        const pin = addr.zip || 'Unknown';
+        byCity[city] = (byCity[city] || 0) + 1;
+        byPincode[pin] = (byPincode[pin] || 0) + 1;
+      }
+    });
+
+    const productData = Object.entries(byProduct).sort((a, b) => (b[1].returns + b[1].exchanges) - (a[1].returns + a[1].exchanges)).slice(0, 20).map(([name, data]) => ({ name, ...data, total: data.returns + data.exchanges }));
+    const cityData = Object.entries(byCity).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([city, count]) => ({ city, count }));
+    const pincodeData = Object.entries(byPincode).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([pincode, count]) => ({ pincode, count }));
+
+    res.json({ by_product: productData, by_city: cityData, by_pincode: pincodeData });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Export CSV
 app.get('/api/returns/export', async (req, res) => {
   const { shop } = req.query;

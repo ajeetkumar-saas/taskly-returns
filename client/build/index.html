@@ -110,6 +110,7 @@ tbody tr:hover{background:var(--gray-50)}
     <div class="nav-item" onclick="showPage('orders')"><i class="fas fa-shopping-bag"></i> Orders</div>
     <div class="nav-label">Insights</div>
     <div class="nav-item" onclick="showPage('analytics')"><i class="fas fa-chart-line"></i> Analytics <span class="nav-new">New</span></div>
+    <div class="nav-item" onclick="showPage('store-analytics')"><i class="fas fa-store-alt"></i> Store Analytics <span class="nav-new">New</span></div>
     <div class="nav-item" onclick="showPage('export')"><i class="fas fa-download"></i> Export Data</div>
     <div class="nav-label">Settings</div>
     <div class="nav-item" onclick="showPage('stores')"><i class="fas fa-store"></i> Stores</div>
@@ -213,6 +214,34 @@ tbody tr:hover{background:var(--gray-50)}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="card"><div class="card-hdr"><h3>By Return Reason</h3></div><div class="card-body"><div class="chart-container"><canvas id="reasonPieChart" role="img" aria-label="Reasons pie chart">Reasons</canvas></div></div></div>
         <div class="card"><div class="card-hdr"><h3>By Status</h3></div><div class="card-body"><div class="chart-container"><canvas id="statusPieChart" role="img" aria-label="Status pie chart">Status</canvas></div></div></div>
+      </div>
+    </div>
+
+    <!-- Store Analytics Page -->
+    <div class="page" id="page-store-analytics">
+      <div class="stats-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="stat-card"><div class="icon" style="background:var(--primary-light);color:var(--primary)"><i class="fas fa-shopping-cart"></i></div><div class="val" id="oaTotal">-</div><div class="lbl">Total Orders</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--success-light);color:var(--success)"><i class="fas fa-indian-rupee-sign"></i></div><div class="val" id="oaRevenue">-</div><div class="lbl">Total Revenue</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--warning-light);color:var(--warning)"><i class="fas fa-money-bill"></i></div><div class="val" id="oaCOD">-</div><div class="lbl">COD Orders</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--info-light);color:var(--info)"><i class="fas fa-credit-card"></i></div><div class="val" id="oaPrepaid">-</div><div class="lbl">Prepaid Orders</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--danger-light);color:var(--danger)"><i class="fas fa-percent"></i></div><div class="val" id="oaCODPct">-</div><div class="lbl">COD %</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-box" style="color:var(--primary);margin-right:6px"></i>Top Products (by Sales)</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>#</th><th>Product</th><th>Sold</th><th>Revenue</th></tr></thead><tbody id="oaProductTb"><tr><td colspan="4" class="empty"><i class="fas fa-spinner fa-spin"></i>Loading...</td></tr></tbody></table></div></div>
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-city" style="color:var(--success);margin-right:6px"></i>Top Cities (by Orders)</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>#</th><th>City</th><th>Orders</th></tr></thead><tbody id="oaCityTb"><tr><td colspan="3" class="empty"><i class="fas fa-spinner fa-spin"></i>Loading...</td></tr></tbody></table></div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-map-pin" style="color:var(--danger);margin-right:6px"></i>Top Pincodes</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>#</th><th>Pincode</th><th>Orders</th></tr></thead><tbody id="oaPinTb"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody></table></div></div>
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-map" style="color:var(--purple);margin-right:6px"></i>Top States</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>#</th><th>State</th><th>Orders</th></tr></thead><tbody id="oaStateTb"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody></table></div></div>
+      </div>
+
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-chart-bar" style="color:var(--info);margin-right:6px"></i>Daily Orders (Last 30 Days)</h3></div><div class="card-body"><div class="chart-container" style="height:250px"><canvas id="orderTrendChart" role="img" aria-label="Daily orders">Orders</canvas></div></div></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><div class="card-hdr"><h3 style="color:var(--danger)"><i class="fas fa-exclamation-triangle" style="margin-right:6px"></i>Top Return Products</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>Product</th><th>Returns</th><th>Exchanges</th><th>Total</th><th>Loss</th></tr></thead><tbody id="retProductTb"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></div>
+        <div class="card"><div class="card-hdr"><h3 style="color:var(--danger)"><i class="fas fa-map-marker-alt" style="margin-right:6px"></i>Top Return Cities</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>City</th><th>Returns</th></tr></thead><tbody id="retCityTb"><tr><td colspan="2" class="empty">Loading...</td></tr></tbody></table></div></div>
       </div>
     </div>
 
@@ -407,7 +436,7 @@ let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
 let analyticsData=null,curATab='requests';
 
-function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin'}[p]||p;if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
+function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
 function showAlert(m,t){const e=document.getElementById('alertBox');e.innerHTML=`<div class="alert alert-${t}"><i class="fas fa-${t==='success'?'check-circle':'exclamation-circle'}"></i>${m}</div>`;setTimeout(()=>e.innerHTML='',4000);}
 
 async function loadStores(){const r=await fetch('/api/shopify/stores');const s=await r.json();const el=document.getElementById('connectedStores');if(s.length){currentShop=s[0].shop_domain;currentPlan=s[0].plan||'free';el.innerHTML=s.map(x=>`<div class="connected-store"><i class="fas fa-check-circle"></i>${x.store_name||x.shop_domain}</div>`).join('');document.getElementById('storeStatus').style.display='flex';document.getElementById('storeName').textContent=(s[0].store_name||s[0].shop_domain)+' · '+currentPlan.toUpperCase();document.getElementById('portalLink').href=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalLink').textContent=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalPreview').href=location.origin+'/return.html?shop='+currentShop;applyPlanLocks();}else{el.innerHTML='<p style="color:var(--gray-400);font-size:12px">No stores connected</p>';}}
@@ -483,6 +512,38 @@ async function loadAllStores(){const r=await fetch('/api/shopify/stores');const 
 tb.innerHTML=s.map(x=>`<tr><td><strong>${x.store_name||'-'}</strong></td><td style="font-size:11px">${x.shop_domain}</td><td><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span></td><td style="font-size:11px">${fmtDate(x.created_at)}</td><td><select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select></td></tr>`).join('');}
 async function changePlan(shop,plan){await fetch('/api/admin/change-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Plan changed to ${plan}`,'success');}
 async function giveFreePlan(){const shop=document.getElementById('freeStore').value.trim(),plan=document.getElementById('freePlan').value;if(!shop)return showAlert('Enter domain','error');await fetch('/api/admin/free-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Free access given!`,'success');}
+
+// Store Analytics
+let orderTrendChartObj;
+async function loadStoreAnalytics(){
+  if(!currentShop)return;
+  try{
+    const r=await fetch('/api/analytics/orders?shop='+currentShop);
+    const d=await r.json();
+    document.getElementById('oaTotal').textContent=d.total_orders;
+    document.getElementById('oaRevenue').textContent='₹'+d.total_revenue.toLocaleString('en-IN');
+    document.getElementById('oaCOD').textContent=d.cod_orders;
+    document.getElementById('oaPrepaid').textContent=d.prepaid_orders;
+    document.getElementById('oaCODPct').textContent=d.cod_percent+'%';
+
+    document.getElementById('oaProductTb').innerHTML=d.top_products.length?d.top_products.map((p,i)=>`<tr><td>${i+1}</td><td><strong>${p.name}</strong></td><td>${p.sold}</td><td class="amount">₹${p.revenue.toLocaleString('en-IN')}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No data</td></tr>';
+    document.getElementById('oaCityTb').innerHTML=d.top_cities.length?d.top_cities.map((c,i)=>`<tr><td>${i+1}</td><td><strong>${c.city}</strong></td><td>${c.count}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">No data</td></tr>';
+    document.getElementById('oaPinTb').innerHTML=d.top_pincodes.length?d.top_pincodes.map((p,i)=>`<tr><td>${i+1}</td><td><strong>${p.pincode}</strong></td><td>${p.count}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">No data</td></tr>';
+    document.getElementById('oaStateTb').innerHTML=d.top_states.length?d.top_states.map((s,i)=>`<tr><td>${i+1}</td><td><strong>${s.state}</strong></td><td>${s.count}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">No data</td></tr>';
+
+    if(d.daily_orders.length){
+      const labels=d.daily_orders.map(x=>new Date(x.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'}));
+      const data=d.daily_orders.map(x=>x.count);
+      if(orderTrendChartObj)orderTrendChartObj.destroy();
+      orderTrendChartObj=new Chart(document.getElementById('orderTrendChart'),{type:'bar',data:{labels,datasets:[{label:'Orders',data,backgroundColor:'rgba(5,150,105,0.7)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+    }
+
+    const r2=await fetch('/api/analytics/returns-deep?shop='+currentShop);
+    const d2=await r2.json();
+    document.getElementById('retProductTb').innerHTML=d2.by_product.length?d2.by_product.map(p=>`<tr><td><strong>${p.name}</strong></td><td>${p.returns}</td><td>${p.exchanges}</td><td>${p.total}</td><td class="amount" style="color:var(--danger)">₹${Math.round(p.amount).toLocaleString('en-IN')}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No return data yet</td></tr>';
+    document.getElementById('retCityTb').innerHTML=d2.by_city.length?d2.by_city.map(c=>`<tr><td><strong>${c.city}</strong></td><td>${c.count}</td></tr>`).join(''):'<tr><td colspan="2" class="empty">No return data yet</td></tr>';
+  }catch(e){console.log(e);}
+}
 
 // Plan-wise feature access
 const PLAN_ACCESS = {
