@@ -8,7 +8,8 @@ const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -112,6 +113,7 @@ async function initDB() {
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMP`);
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS risk_level VARCHAR(20) DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS images TEXT DEFAULT ''`);
     await pool.query(`CREATE TABLE IF NOT EXISTS store_settings (
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) UNIQUE NOT NULL,
@@ -550,11 +552,11 @@ app.post('/api/settings', async (req, res) => {
 
 // Create return/exchange
 app.post('/api/returns', async (req, res) => {
-  const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant } = req.body;
+  const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant, images } = req.body;
   const r = await pool.query(
-    `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-    [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'']
+    `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+    [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'']
   );
   res.json(r.rows[0]);
 });
@@ -785,6 +787,46 @@ app.post('/api/offers/redeem', async (req, res) => {
     await pool.query('UPDATE offers SET used=used+1 WHERE id=$1', [offer.id]);
     res.json({ ok: true, message: `Offer "${code}" applied! Plan: ${newPlan}`, plan: newPlan });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Image upload via Shopify Files API
+app.post('/api/upload-image', async (req, res) => {
+  const { shop, image_data, filename } = req.body;
+  if (!shop || !image_data) return res.status(400).json({ error: 'shop and image_data required' });
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
+  try {
+    const mutation = `mutation fileCreate($files: [FileCreateInput!]!) {
+      fileCreate(files: $files) {
+        files { id alt createdAt fileStatus preview { image { url } } }
+        userErrors { field message }
+      }
+    }`;
+    const r = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
+      body: JSON.stringify({
+        query: mutation,
+        variables: { files: [{ alt: 'Return image', contentType: 'IMAGE', originalSource: image_data }] }
+      })
+    });
+    const d = await r.json();
+    if (d.data?.fileCreate?.files?.[0]) {
+      const file = d.data.fileCreate.files[0];
+      res.json({ ok: true, url: file.preview?.image?.url || image_data, id: file.id });
+    } else {
+      res.json({ ok: true, url: image_data });
+    }
+  } catch(e) {
+    res.json({ ok: true, url: image_data });
+  }
+});
+
+// Save images to return
+app.post('/api/returns/:id/images', async (req, res) => {
+  const { images } = req.body;
+  const r = await pool.query('UPDATE returns SET images=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [images || '', req.params.id]);
+  res.json(r.rows[0]);
 });
 
 // Automation Rules (Wonder Bot)
