@@ -6,6 +6,51 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { Pool } = require('pg');
 
+const nodemailer = require('nodemailer');
+
+const emailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: false,
+  auth: { user: process.env.SMTP_USER || '', pass: process.env.SMTP_PASS || '' }
+});
+
+async function sendEmail(to, subject, html) {
+  if (!process.env.SMTP_USER) return;
+  try {
+    await emailTransporter.sendMail({
+      from: `"Taskly Returns" <${process.env.SMTP_USER}>`,
+      to, subject, html
+    });
+  } catch(e) { console.log('Email error:', e.message); }
+}
+
+function returnStatusEmail(customerName, orderId, status, amount) {
+  const statusMessages = {
+    pending: { title: 'Return Request Received', color: '#D97706', msg: 'We have received your return request and will review it shortly.' },
+    approved: { title: 'Return Approved!', color: '#059669', msg: 'Great news! Your return has been approved. We will arrange pickup soon.' },
+    inspected: { title: 'Product Inspected', color: '#7C3AED', msg: 'We have received and inspected your returned product.' },
+    refunded: { title: 'Refund Processed!', color: '#0284C7', msg: 'Your refund has been processed. The amount will be credited within 5-7 business days.' },
+    rejected: { title: 'Return Request Declined', color: '#DC2626', msg: 'Unfortunately, your return request could not be approved. Please contact support for more details.' },
+    processed: { title: 'Return Completed', color: '#1D4ED8', msg: 'Your return has been fully processed. Thank you!' }
+  };
+  const s = statusMessages[status] || statusMessages.pending;
+  return `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px">
+    <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">Taskly Returns</h2></div>
+    <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px">
+      <div style="text-align:center;margin-bottom:16px"><span style="display:inline-block;padding:6px 16px;border-radius:20px;background:${s.color}20;color:${s.color};font-weight:600;font-size:14px">${s.title}</span></div>
+      <p style="color:#374151;font-size:14px">Hi ${customerName},</p>
+      <p style="color:#6B7280;font-size:14px">${s.msg}</p>
+      <div style="background:#F9FAFB;border-radius:8px;padding:12px;margin:16px 0">
+        <p style="margin:4px 0;font-size:13px;color:#6B7280">Order: <strong style="color:#111">${orderId}</strong></p>
+        <p style="margin:4px 0;font-size:13px;color:#6B7280">Status: <strong style="color:${s.color}">${status.toUpperCase()}</strong></p>
+        ${amount ? '<p style="margin:4px 0;font-size:13px;color:#6B7280">Amount: <strong style="color:#111">₹'+amount+'</strong></p>' : ''}
+      </div>
+      <p style="color:#9CA3AF;font-size:12px;margin-top:20px;text-align:center">Powered by Taskly Returns</p>
+    </div>
+  </div>`;
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -558,6 +603,7 @@ app.post('/api/returns', async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
     [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'']
   );
+  if (customer_email) sendEmail(customer_email, 'Return Request Received - ' + (order_number||order_id), returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount));
   res.json(r.rows[0]);
 });
 
@@ -579,7 +625,9 @@ app.patch('/api/returns/:id', async (req, res) => {
   fields.push(`updated_at=NOW()`);
   values.push(req.params.id);
   const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idx} RETURNING *`, values);
-  res.json(r.rows[0]);
+  const ret = r.rows[0];
+  if (status && ret.customer_email) sendEmail(ret.customer_email, `Return ${status.toUpperCase()} - ${ret.order_number||ret.order_id}`, returnStatusEmail(ret.customer_name||'Customer', ret.order_number||ret.order_id, status, ret.amount));
+  res.json(ret);
 });
 
 // Customer return tracking
@@ -787,6 +835,63 @@ app.post('/api/offers/redeem', async (req, res) => {
     await pool.query('UPDATE offers SET used=used+1 WHERE id=$1', [offer.id]);
     res.json({ ok: true, message: `Offer "${code}" applied! Plan: ${newPlan}`, plan: newPlan });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Customer fraud score
+app.get('/api/analytics/fraud', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  try {
+    const r = await pool.query(
+      `SELECT customer_email, customer_name, COUNT(*) as return_count, COALESCE(SUM(amount),0) as total_amount,
+       MAX(created_at) as last_return FROM returns WHERE shop_domain=$1 AND customer_email!=''
+       GROUP BY customer_email, customer_name HAVING COUNT(*) >= 2 ORDER BY COUNT(*) DESC LIMIT 20`, [shop]);
+    const customers = r.rows.map(c => ({
+      ...c, return_count: parseInt(c.return_count), total_amount: Math.round(parseFloat(c.total_amount)),
+      risk: parseInt(c.return_count) >= 5 ? 'high' : parseInt(c.return_count) >= 3 ? 'medium' : 'low'
+    }));
+    res.json(customers);
+  } catch(e) { res.json([]); }
+});
+
+// Pincode risk score
+app.get('/api/analytics/pincode-risk', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.json([]);
+  try {
+    const ordersResp = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=250`, {
+      headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+    });
+    const ordersData = await ordersResp.json();
+    const orders = ordersData.orders || [];
+    const returns = await pool.query('SELECT * FROM returns WHERE shop_domain=$1', [shop]);
+    const orderMap = {};
+    orders.forEach(o => { orderMap[o.name] = o; orderMap[String(o.id)] = o; });
+
+    const pincodeData = {};
+    orders.forEach(o => {
+      const pin = o.shipping_address?.zip || 'Unknown';
+      const city = o.shipping_address?.city || 'Unknown';
+      if (!pincodeData[pin]) pincodeData[pin] = { pincode: pin, city, orders: 0, returns: 0 };
+      pincodeData[pin].orders++;
+    });
+    returns.rows.forEach(ret => {
+      const order = orderMap[ret.order_number] || orderMap[ret.order_id];
+      if (order) {
+        const pin = order.shipping_address?.zip || 'Unknown';
+        if (pincodeData[pin]) pincodeData[pin].returns++;
+      }
+    });
+
+    const result = Object.values(pincodeData)
+      .map(p => ({ ...p, return_rate: p.orders ? Math.round(p.returns / p.orders * 100) : 0,
+        risk: p.orders >= 3 && (p.returns / p.orders) >= 0.3 ? 'high' : (p.returns / p.orders) >= 0.15 ? 'medium' : 'low' }))
+      .filter(p => p.orders >= 2)
+      .sort((a, b) => b.return_rate - a.return_rate).slice(0, 20);
+    res.json(result);
+  } catch(e) { res.json([]); }
 });
 
 // Image upload via Shopify Files API
