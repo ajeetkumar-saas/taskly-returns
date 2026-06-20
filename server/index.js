@@ -99,6 +99,30 @@ async function initDB() {
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_password TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_token TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_connected BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS portal_color VARCHAR(20) DEFAULT '#4F46E5'`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS portal_banner TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS return_window INTEGER DEFAULT 14`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS exchange_window INTEGER DEFAULT 14`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS auto_approve_under NUMERIC(10,2) DEFAULT 0`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS notify_email BOOLEAN DEFAULT true`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'return'`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS exchange_product TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS exchange_variant TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS inspected_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS risk_level VARCHAR(20) DEFAULT ''`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS store_settings (
+      id SERIAL PRIMARY KEY,
+      shop_domain VARCHAR(255) UNIQUE NOT NULL,
+      return_reasons TEXT DEFAULT 'Damaged Product,Wrong Item Received,Size/Fit Issue,Quality Not As Expected,Not As Described,Changed My Mind',
+      exchange_reasons TEXT DEFAULT 'Wrong Size,Wrong Color,Want Different Product',
+      refund_methods TEXT DEFAULT 'Original Payment Method,Bank Transfer,Store Credit,UPI',
+      notification_emails TEXT DEFAULT '',
+      auto_approve_enabled BOOLEAN DEFAULT false,
+      auto_approve_amount NUMERIC(10,2) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
   } catch(e) {}
   console.log('DB ready');
 }
@@ -153,9 +177,10 @@ app.get('/api/auth/callback', async (req, res) => {
 
 // Billing
 const PLANS = {
-  starter: { name: 'Starter', price: 999, returns: 50, trial_days: 7 },
-  growth: { name: 'Growth', price: 1999, returns: 200, trial_days: 7 },
-  pro: { name: 'Pro', price: 4999, returns: 999999, trial_days: 7 }
+  free: { name: 'Free', price: 0, returns: 5, trial_days: 0 },
+  starter: { name: 'Starter', price: 999, returns: 50, trial_days: 15 },
+  growth: { name: 'Growth', price: 1999, returns: 200, trial_days: 15 },
+  pro: { name: 'Pro', price: 4999, returns: 999999, trial_days: 15 }
 };
 
 app.get('/api/billing/create', async (req, res) => {
@@ -309,14 +334,20 @@ app.post('/api/shopify/refund', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Returns CRUD
+// Returns CRUD with date filters
 app.get('/api/returns', async (req, res) => {
-  const { shop, status } = req.query;
+  const { shop, status, type, date_from, date_to, archived } = req.query;
   let query = 'SELECT * FROM returns';
   const params = [];
   const conditions = [];
-  if (shop) { conditions.push(`shop_domain=$${conditions.length+1}`); params.push(shop); }
-  if (status) { conditions.push(`status=$${conditions.length+1}`); params.push(status); }
+  let idx = 1;
+  if (shop) { conditions.push(`shop_domain=$${idx++}`); params.push(shop); }
+  if (status) { conditions.push(`status=$${idx++}`); params.push(status); }
+  if (type) { conditions.push(`type=$${idx++}`); params.push(type); }
+  if (date_from) { conditions.push(`created_at >= $${idx++}`); params.push(date_from); }
+  if (date_to) { conditions.push(`created_at <= $${idx++}`); params.push(date_to); }
+  if (archived === 'true') { conditions.push(`archived=true`); }
+  else { conditions.push(`(archived IS NULL OR archived=false)`); }
   if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
   query += ' ORDER BY created_at DESC';
   const r = await pool.query(query, params);
@@ -325,44 +356,111 @@ app.get('/api/returns', async (req, res) => {
 
 app.get('/api/returns/stats', async (req, res) => {
   const { shop } = req.query;
-  let where = '';
-  const params = [];
-  if (shop) { where = ' WHERE shop_domain=$1'; params.push(shop); }
-  const total = await pool.query('SELECT COUNT(*) as count FROM returns' + where, params);
-  const pending = await pool.query('SELECT COUNT(*) as count FROM returns' + (where || ' WHERE ') + (where ? ' AND ' : '') + "status='pending'", params);
-  const approved = await pool.query('SELECT COUNT(*) as count FROM returns' + (where || ' WHERE ') + (where ? ' AND ' : '') + "status='approved'", params);
-  const processed = await pool.query('SELECT COUNT(*) as count FROM returns' + (where || ' WHERE ') + (where ? ' AND ' : '') + "status='processed'", params);
-  const rejected = await pool.query('SELECT COUNT(*) as count FROM returns' + (where || ' WHERE ') + (where ? ' AND ' : '') + "status='rejected'", params);
-  const totalAmount = await pool.query('SELECT COALESCE(SUM(amount),0) as total FROM returns' + where, params);
+  let w = shop ? ' WHERE shop_domain=$1' : '';
+  const p = shop ? [shop] : [];
+  const q = (extra) => pool.query(`SELECT COUNT(*) as count FROM returns${w}${w ? ' AND ' : ' WHERE '}${extra}`, p);
+  const total = await pool.query('SELECT COUNT(*) as count FROM returns' + w, p);
+  const pending = await q("status='pending'");
+  const approved = await q("status='approved'");
+  const inspected = await q("status='inspected'");
+  const processed = await q("status='processed'");
+  const refunded = await q("status='refunded'");
+  const rejected = await q("status='rejected'");
+  const exchanges = await q("type='exchange'");
+  const totalAmount = await pool.query('SELECT COALESCE(SUM(amount),0) as total FROM returns' + w, p);
+  const revenueSaved = await pool.query("SELECT COALESCE(SUM(amount),0) as total FROM returns" + (w || ' WHERE ') + (w ? ' AND ' : '') + "type='exchange'", p);
   res.json({
-    total: parseInt(total.rows[0].count),
-    pending: parseInt(pending.rows[0].count),
-    approved: parseInt(approved.rows[0].count),
-    processed: parseInt(processed.rows[0].count),
-    rejected: parseInt(rejected.rows[0].count),
-    total_amount: parseFloat(totalAmount.rows[0].total)
+    total: parseInt(total.rows[0].count), pending: parseInt(pending.rows[0].count),
+    approved: parseInt(approved.rows[0].count), inspected: parseInt(inspected.rows[0].count),
+    processed: parseInt(processed.rows[0].count), refunded: parseInt(refunded.rows[0].count),
+    rejected: parseInt(rejected.rows[0].count), exchanges: parseInt(exchanges.rows[0].count),
+    total_amount: parseFloat(totalAmount.rows[0].total),
+    revenue_saved: parseFloat(revenueSaved.rows[0].total)
   });
 });
 
+// Analytics with date range
+app.get('/api/analytics', async (req, res) => {
+  const { shop, days } = req.query;
+  const d = parseInt(days) || 30;
+  const p = shop ? [shop] : [];
+  const w = shop ? ' AND shop_domain=$1' : '';
+  const daily = await pool.query(
+    `SELECT DATE(created_at) as date, COUNT(*) as count, COALESCE(SUM(amount),0) as amount,
+     SUM(CASE WHEN type='exchange' THEN amount ELSE 0 END) as saved
+     FROM returns WHERE created_at >= NOW() - INTERVAL '${d} days'${w}
+     GROUP BY DATE(created_at) ORDER BY date`, p);
+  const byReason = await pool.query(
+    `SELECT reason, COUNT(*) as count FROM returns WHERE created_at >= NOW() - INTERVAL '${d} days'${w} GROUP BY reason ORDER BY count DESC LIMIT 10`, p);
+  const byStatus = await pool.query(
+    `SELECT status, COUNT(*) as count FROM returns WHERE created_at >= NOW() - INTERVAL '${d} days'${w} GROUP BY status`, p);
+  res.json({ daily: daily.rows, by_reason: byReason.rows, by_status: byStatus.rows });
+});
+
+// Export CSV
+app.get('/api/returns/export', async (req, res) => {
+  const { shop } = req.query;
+  let query = 'SELECT id,order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,status,type,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns';
+  const params = [];
+  if (shop) { query += ' WHERE shop_domain=$1'; params.push(shop); }
+  query += ' ORDER BY created_at DESC';
+  const r = await pool.query(query, params);
+  const headers = 'ID,Order ID,Order Number,Customer Name,Email,Phone,Product,SKU,Qty,Reason,Details,Status,Type,Refund Method,Amount,Tracking,Pickup Status,Created,Updated\n';
+  const csv = headers + r.rows.map(row =>
+    `${row.id},"${row.order_id}","${row.order_number}","${row.customer_name}","${row.customer_email}","${row.customer_phone}","${row.product_name}","${row.product_sku}",${row.quantity},"${row.reason}","${row.reason_detail}",${row.status},${row.type},${row.refund_method},${row.amount},"${row.tracking_number}",${row.pickup_status},"${row.created_at}","${row.updated_at}"`
+  ).join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=returns-export.csv');
+  res.send(csv);
+});
+
+// Store settings
+app.get('/api/settings', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  const store = await pool.query('SELECT portal_color,portal_banner,return_window,exchange_window,auto_approve_under,notify_email FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const settings = await pool.query('SELECT * FROM store_settings WHERE shop_domain=$1', [shop]);
+  res.json({ store: store.rows[0] || {}, settings: settings.rows[0] || {} });
+});
+
+app.post('/api/settings', async (req, res) => {
+  const { shop, portal_color, return_window, exchange_window, auto_approve_under, notify_email, return_reasons, exchange_reasons, refund_methods, auto_approve_enabled } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET portal_color=$1, return_window=$2, exchange_window=$3, auto_approve_under=$4, notify_email=$5 WHERE shop_domain=$6',
+    [portal_color||'#4F46E5', return_window||14, exchange_window||14, auto_approve_under||0, notify_email!==false, shop]);
+  await pool.query(
+    `INSERT INTO store_settings (shop_domain, return_reasons, exchange_reasons, refund_methods, auto_approve_enabled, auto_approve_amount)
+     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET return_reasons=$2, exchange_reasons=$3, refund_methods=$4, auto_approve_enabled=$5, auto_approve_amount=$6`,
+    [shop, return_reasons||'', exchange_reasons||'', refund_methods||'', auto_approve_enabled||false, auto_approve_under||0]);
+  res.json({ ok: true });
+});
+
+// Create return/exchange
 app.post('/api/returns', async (req, res) => {
-  const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain } = req.body;
+  const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant } = req.body;
   const r = await pool.query(
-    `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-    [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'']
+    `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+    [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'']
   );
   res.json(r.rows[0]);
 });
 
 app.patch('/api/returns/:id', async (req, res) => {
-  const { status, merchant_notes, tracking_number, pickup_status } = req.body;
+  const { status, merchant_notes, tracking_number, pickup_status, archived, risk_level } = req.body;
   const fields = [];
   const values = [];
   let idx = 1;
-  if (status) { fields.push(`status=$${idx++}`); values.push(status); }
+  if (status) {
+    fields.push(`status=$${idx++}`); values.push(status);
+    if (status === 'inspected') fields.push('inspected_at=NOW()');
+    if (status === 'refunded') fields.push('refunded_at=NOW()');
+  }
   if (merchant_notes !== undefined) { fields.push(`merchant_notes=$${idx++}`); values.push(merchant_notes); }
   if (tracking_number !== undefined) { fields.push(`tracking_number=$${idx++}`); values.push(tracking_number); }
   if (pickup_status !== undefined) { fields.push(`pickup_status=$${idx++}`); values.push(pickup_status); }
+  if (archived !== undefined) { fields.push(`archived=$${idx++}`); values.push(archived); }
+  if (risk_level !== undefined) { fields.push(`risk_level=$${idx++}`); values.push(risk_level); }
   fields.push(`updated_at=NOW()`);
   values.push(req.params.id);
   const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idx} RETURNING *`, values);
