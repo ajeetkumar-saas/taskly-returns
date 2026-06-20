@@ -6,125 +6,133 @@
 <title>Taskly Returns - Dashboard</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--primary:#4F46E5;--primary-light:#EEF2FF;--primary-dark:#3730A3;--success:#059669;--success-light:#D1FAE5;--warning:#D97706;--warning-light:#FEF3C7;--danger:#DC2626;--danger-light:#FEE2E2;--info:#0284C7;--info-light:#E0F2FE;--gray-50:#F9FAFB;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-300:#D1D5DB;--gray-400:#9CA3AF;--gray-500:#6B7280;--gray-600:#4B5563;--gray-700:#374151;--gray-800:#1F2937;--gray-900:#111827;--shadow:0 1px 3px rgba(0,0,0,0.1);--shadow-md:0 4px 6px -1px rgba(0,0,0,0.1);--radius:8px;--radius-lg:12px}
+:root{--primary:#4F46E5;--primary-light:#EEF2FF;--primary-dark:#3730A3;--success:#059669;--success-light:#D1FAE5;--warning:#D97706;--warning-light:#FEF3C7;--danger:#DC2626;--danger-light:#FEE2E2;--info:#0284C7;--info-light:#E0F2FE;--purple:#7C3AED;--purple-light:#EDE9FE;--gray-50:#F9FAFB;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-300:#D1D5DB;--gray-400:#9CA3AF;--gray-500:#6B7280;--gray-600:#4B5563;--gray-700:#374151;--gray-800:#1F2937;--gray-900:#111827;--radius:8px;--radius-lg:12px}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);color:var(--gray-800);font-size:14px}
-.sidebar{position:fixed;left:0;top:0;width:240px;height:100vh;background:var(--gray-900);color:white;padding:0;z-index:100;display:flex;flex-direction:column}
-.sidebar-header{padding:20px;border-bottom:1px solid rgba(255,255,255,0.1)}
-.sidebar-header h1{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sidebar{position:fixed;left:0;top:0;width:220px;height:100vh;background:var(--gray-900);color:white;z-index:100;display:flex;flex-direction:column}
+.sidebar-header{padding:16px;border-bottom:1px solid rgba(255,255,255,0.1)}
+.sidebar-header h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
 .sidebar-header h1 i{color:#818CF8}
-.sidebar-header p{font-size:11px;color:var(--gray-400);margin-top:4px}
-.sidebar-nav{flex:1;padding:12px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);color:var(--gray-400);cursor:pointer;margin-bottom:2px;font-size:13px;transition:all 0.15s}
+.sidebar-header p{font-size:10px;color:var(--gray-400);margin-top:2px}
+.sidebar-nav{flex:1;padding:8px;overflow-y:auto}
+.nav-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gray-500);padding:12px 12px 4px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius);color:var(--gray-400);cursor:pointer;margin-bottom:1px;font-size:13px;transition:all 0.15s}
 .nav-item:hover,.nav-item.active{background:rgba(255,255,255,0.1);color:white}
-.nav-item i{width:18px;text-align:center;font-size:14px}
-.nav-badge{margin-left:auto;background:var(--primary);color:white;font-size:10px;padding:2px 7px;border-radius:10px}
-.main{margin-left:240px;min-height:100vh}
-.topbar{background:white;border-bottom:1px solid var(--gray-200);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
-.topbar-left{display:flex;align-items:center;gap:12px}
-.topbar-left h2{font-size:16px;font-weight:600}
-.store-badge{display:flex;align-items:center;gap:6px;background:var(--success-light);color:var(--success);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:500}
-.store-badge i{font-size:10px}
-.topbar-right{display:flex;align-items:center;gap:12px}
-.topbar-btn{background:var(--primary);color:white;border:none;padding:8px 16px;border-radius:var(--radius);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:500}
-.topbar-btn:hover{background:var(--primary-dark)}
-.topbar-btn.secondary{background:white;color:var(--gray-700);border:1px solid var(--gray-300)}
-.topbar-btn.secondary:hover{background:var(--gray-50)}
-.content{padding:24px}
-.stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px}
-.stat-card{background:white;border-radius:var(--radius-lg);padding:20px;border:1px solid var(--gray-200)}
-.stat-card .stat-icon{width:40px;height:40px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px}
-.stat-card .stat-value{font-size:28px;font-weight:700;margin-bottom:2px}
-.stat-card .stat-label{font-size:12px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px}
-.card{background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200);margin-bottom:20px}
-.card-header{padding:16px 20px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
-.card-header h3{font-size:15px;font-weight:600}
-.card-body{padding:20px}
-.filter-bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.filter-btn{padding:6px 14px;border:1px solid var(--gray-300);border-radius:20px;background:white;font-size:12px;cursor:pointer;color:var(--gray-600);transition:all 0.15s}
+.nav-item i{width:18px;text-align:center;font-size:13px}
+.nav-badge{margin-left:auto;background:var(--primary);color:white;font-size:9px;padding:2px 6px;border-radius:10px}
+.nav-new{margin-left:auto;background:#059669;color:white;font-size:9px;padding:2px 6px;border-radius:10px}
+.main{margin-left:220px;min-height:100vh}
+.topbar{background:white;border-bottom:1px solid var(--gray-200);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.topbar h2{font-size:15px;font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.btn{padding:7px 14px;border-radius:var(--radius);font-size:12px;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;font-weight:500;transition:all 0.15s}
+.btn-primary{background:var(--primary);color:white}.btn-primary:hover{background:var(--primary-dark)}
+.btn-secondary{background:white;color:var(--gray-700);border:1px solid var(--gray-300)}.btn-secondary:hover{background:var(--gray-50)}
+.btn-success{background:var(--success);color:white}
+.btn-danger{background:var(--danger-light);color:var(--danger);border:1px solid var(--danger)}
+.content{padding:20px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:white;border-radius:var(--radius-lg);padding:16px;border:1px solid var(--gray-200)}
+.stat-card .icon{width:36px;height:36px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:14px;margin-bottom:10px}
+.stat-card .val{font-size:24px;font-weight:700}
+.stat-card .lbl{font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px}
+.card{background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200);margin-bottom:16px}
+.card-hdr{padding:14px 16px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
+.card-hdr h3{font-size:14px;font-weight:600}
+.card-body{padding:16px}
+.filter-bar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:5px 12px;border:1px solid var(--gray-300);border-radius:20px;background:white;font-size:11px;cursor:pointer;color:var(--gray-600)}
 .filter-btn:hover,.filter-btn.active{background:var(--primary);color:white;border-color:var(--primary)}
+.date-btn{padding:5px 10px;border:1px solid var(--gray-200);border-radius:6px;background:white;font-size:11px;cursor:pointer;color:var(--gray-500)}
+.date-btn:hover,.date-btn.active{background:var(--gray-100);color:var(--gray-800);border-color:var(--gray-400)}
 table{width:100%;border-collapse:collapse}
-thead th{text-align:left;padding:10px 12px;font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--gray-200);font-weight:600}
-tbody td{padding:12px;font-size:13px;border-bottom:1px solid var(--gray-100);vertical-align:middle}
+thead th{text-align:left;padding:8px 10px;font-size:10px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--gray-200);font-weight:600}
+tbody td{padding:10px;font-size:12px;border-bottom:1px solid var(--gray-100);vertical-align:middle}
 tbody tr:hover{background:var(--gray-50)}
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
 .badge-pending{background:var(--warning-light);color:var(--warning)}
 .badge-approved{background:var(--success-light);color:var(--success)}
+.badge-inspected{background:var(--purple-light);color:var(--purple)}
+.badge-refunded{background:var(--info-light);color:var(--info)}
+.badge-processed{background:#DBEAFE;color:#1D4ED8}
 .badge-rejected{background:var(--danger-light);color:var(--danger)}
-.badge-processed{background:var(--info-light);color:var(--info)}
-.action-btn{padding:5px 12px;border-radius:6px;border:1px solid transparent;font-size:12px;cursor:pointer;font-weight:500;margin-right:4px;transition:all 0.15s}
-.action-btn.approve{background:var(--success-light);color:var(--success);border-color:var(--success)}
-.action-btn.approve:hover{background:var(--success);color:white}
-.action-btn.reject{background:var(--danger-light);color:var(--danger);border-color:var(--danger)}
-.action-btn.reject:hover{background:var(--danger);color:white}
-.action-btn.process{background:var(--info-light);color:var(--info);border-color:var(--info)}
-.action-btn.process:hover{background:var(--info);color:white}
-.empty-state{text-align:center;padding:48px 20px;color:var(--gray-400)}
-.empty-state i{font-size:48px;margin-bottom:12px;display:block}
-.empty-state p{font-size:14px}
+.badge-exchange{background:#FDF4FF;color:#A21CAF}
+.badge-archived{background:var(--gray-100);color:var(--gray-500)}
+.badge-at_risk{background:#FEF3C7;color:#92400E}
+.action-btn{padding:4px 10px;border-radius:5px;border:1px solid transparent;font-size:11px;cursor:pointer;font-weight:500;margin-right:3px}
+.empty{text-align:center;padding:40px;color:var(--gray-400)}
+.empty i{font-size:36px;margin-bottom:8px;display:block}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center}
 .modal-overlay.show{display:flex}
-.modal{background:white;border-radius:var(--radius-lg);width:560px;max-width:90vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2)}
-.modal-header{padding:16px 20px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
-.modal-header h3{font-size:16px;font-weight:600}
-.modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray-400);padding:4px}
-.modal-body{padding:20px}
-.form-group{margin-bottom:14px}
-.form-group label{display:block;font-size:12px;font-weight:600;color:var(--gray-700);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.3px}
-.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;outline:none;transition:border 0.15s}
-.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--primary)}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.modal-footer{padding:16px 20px;border-top:1px solid var(--gray-200);display:flex;justify-content:flex-end;gap:8px}
-.alert{padding:12px 16px;border-radius:var(--radius);margin-bottom:16px;font-size:13px;display:flex;align-items:center;gap:8px}
+.modal{background:white;border-radius:var(--radius-lg);width:560px;max-width:90vw;max-height:85vh;overflow-y:auto}
+.modal-hdr{padding:14px 16px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
+.modal-hdr h3{font-size:15px;font-weight:600}
+.modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:var(--gray-400)}
+.modal-body{padding:16px}
+.modal-foot{padding:12px 16px;border-top:1px solid var(--gray-200);display:flex;justify-content:flex-end;gap:8px}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:11px;font-weight:600;color:var(--gray-700);margin-bottom:3px;text-transform:uppercase;letter-spacing:0.3px}
+.fg input,.fg select,.fg textarea{width:100%;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;outline:none}
+.fg input:focus,.fg select:focus{border-color:var(--primary)}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.alert{padding:10px 14px;border-radius:var(--radius);margin-bottom:12px;font-size:12px;display:flex;align-items:center;gap:6px}
 .alert-success{background:var(--success-light);color:var(--success)}
 .alert-error{background:var(--danger-light);color:var(--danger)}
-.connect-section{display:flex;align-items:center;gap:12px;padding:4px 0}
-.connect-section input{flex:1;padding:10px 14px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;outline:none}
-.connect-section input:focus{border-color:var(--primary)}
-.connected-store{display:inline-flex;align-items:center;gap:6px;background:var(--success-light);color:var(--success);padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin-right:8px;margin-bottom:8px}
-.connected-store i{font-size:12px}
-.page{display:none}
-.page.active{display:block}
-.customer-link{display:flex;align-items:center;gap:6px;margin-top:12px;padding:10px 16px;background:var(--primary-light);border-radius:var(--radius);font-size:13px;color:var(--primary)}
+.connect-section{display:flex;align-items:center;gap:10px}
+.connect-section input{flex:1;padding:8px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;outline:none}
+.connected-store{display:inline-flex;align-items:center;gap:5px;background:var(--success-light);color:var(--success);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:500;margin-right:6px;margin-bottom:6px}
+.customer-link{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--primary-light);border-radius:var(--radius);font-size:12px;color:var(--primary)}
 .customer-link a{color:var(--primary);font-weight:600;word-break:break-all}
-.amount{font-weight:600;font-family:'SF Mono',monospace}
-@media(max-width:768px){
-  .sidebar{display:none}
-  .main{margin-left:0}
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
-  .form-row{grid-template-columns:1fr}
-}
+.chart-container{position:relative;height:250px;margin:12px 0}
+.page{display:none}.page.active{display:block}
+.store-badge{display:flex;align-items:center;gap:5px;background:var(--success-light);color:var(--success);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.amount{font-weight:600;font-family:'SF Mono',monospace;font-size:12px}
+.tab-row{display:flex;border-bottom:1px solid var(--gray-200);margin-bottom:16px}
+.tab-item{padding:8px 16px;font-size:12px;font-weight:500;color:var(--gray-500);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab-item:hover{color:var(--gray-800)}
+.tab-item.active{color:var(--primary);border-bottom-color:var(--primary)}
+@media(max-width:768px){.sidebar{display:none}.main{margin-left:0}.stats-grid{grid-template-columns:repeat(2,1fr)}.fr{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="sidebar">
   <div class="sidebar-header">
     <h1><i class="fas fa-rotate-left"></i> Taskly Returns</h1>
-    <p>COD Returns Management</p>
+    <p>Returns & Exchanges Platform</p>
   </div>
   <nav class="sidebar-nav">
+    <div class="nav-label">Main</div>
     <div class="nav-item active" onclick="showPage('dashboard')"><i class="fas fa-chart-pie"></i> Dashboard</div>
     <div class="nav-item" onclick="showPage('returns')"><i class="fas fa-rotate-left"></i> Returns <span class="nav-badge" id="pendingBadge">0</span></div>
+    <div class="nav-item" onclick="showPage('exchanges')"><i class="fas fa-exchange-alt"></i> Exchanges <span class="nav-new">New</span></div>
     <div class="nav-item" onclick="showPage('orders')"><i class="fas fa-shopping-bag"></i> Orders</div>
+    <div class="nav-label">Insights</div>
+    <div class="nav-item" onclick="showPage('analytics')"><i class="fas fa-chart-line"></i> Analytics <span class="nav-new">New</span></div>
+    <div class="nav-item" onclick="showPage('export')"><i class="fas fa-download"></i> Export Data</div>
+    <div class="nav-label">Settings</div>
     <div class="nav-item" onclick="showPage('stores')"><i class="fas fa-store"></i> Stores</div>
+    <div class="nav-item" onclick="showPage('policies')"><i class="fas fa-shield-halved"></i> Policies</div>
+    <div class="nav-item" onclick="showPage('reasons')"><i class="fas fa-list-check"></i> Reasons</div>
+    <div class="nav-item" onclick="showPage('logistics')"><i class="fas fa-truck"></i> Logistics</div>
+    <div class="nav-item" onclick="showPage('notifications')"><i class="fas fa-bell"></i> Notifications</div>
     <div class="nav-item" onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</div>
-    <div class="nav-item" onclick="showPage('admin')" id="adminNav" style="display:none"><i class="fas fa-shield-halved"></i> Admin Panel</div>
+    <div class="nav-item" onclick="showPage('admin')" id="adminNav" style="display:none"><i class="fas fa-shield-halved"></i> Admin</div>
   </nav>
-  <div style="padding:16px;border-top:1px solid rgba(255,255,255,0.1)">
-    <div style="font-size:11px;color:var(--gray-400)">Taskly Returns v2.0</div>
-  </div>
+  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:10px;color:var(--gray-500)">Taskly Returns v3.0</div>
 </div>
 
 <div class="main">
   <div class="topbar">
-    <div class="topbar-left">
+    <div style="display:flex;align-items:center;gap:10px">
       <h2 id="pageTitle">Dashboard</h2>
-      <div class="store-badge" id="storeStatus" style="display:none"><i class="fas fa-circle"></i> <span id="storeName">Connected</span></div>
+      <div class="store-badge" id="storeStatus" style="display:none"><i class="fas fa-circle" style="font-size:8px"></i> <span id="storeName"></span></div>
     </div>
     <div class="topbar-right">
-      <button class="topbar-btn secondary" onclick="loadReturns()"><i class="fas fa-sync-alt"></i> Refresh</button>
-      <button class="topbar-btn" onclick="openModal()"><i class="fas fa-plus"></i> New Return</button>
+      <button class="btn btn-secondary" onclick="loadReturns()"><i class="fas fa-sync-alt"></i> Refresh</button>
+      <button class="btn btn-primary" onclick="openModal('return')"><i class="fas fa-plus"></i> New Return</button>
+      <button class="btn btn-success" onclick="openModal('exchange')"><i class="fas fa-exchange-alt"></i> New Exchange</button>
     </div>
   </div>
 
@@ -134,698 +142,275 @@ tbody tr:hover{background:var(--gray-50)}
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
       <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon" style="background:var(--primary-light);color:var(--primary)"><i class="fas fa-rotate-left"></i></div>
-          <div class="stat-value" id="statTotal">0</div>
-          <div class="stat-label">Total Returns</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background:var(--warning-light);color:var(--warning)"><i class="fas fa-clock"></i></div>
-          <div class="stat-value" id="statPending">0</div>
-          <div class="stat-label">Pending</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background:var(--success-light);color:var(--success)"><i class="fas fa-check-circle"></i></div>
-          <div class="stat-value" id="statApproved">0</div>
-          <div class="stat-label">Approved</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background:var(--danger-light);color:var(--danger)"><i class="fas fa-times-circle"></i></div>
-          <div class="stat-value" id="statRejected">0</div>
-          <div class="stat-label">Rejected</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background:var(--info-light);color:var(--info)"><i class="fas fa-indian-rupee-sign"></i></div>
-          <div class="stat-value" id="statAmount">0</div>
-          <div class="stat-label">Total Refund Value</div>
-        </div>
+        <div class="stat-card"><div class="icon" style="background:var(--primary-light);color:var(--primary)"><i class="fas fa-rotate-left"></i></div><div class="val" id="sTotal">0</div><div class="lbl">Total Returns</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--warning-light);color:var(--warning)"><i class="fas fa-clock"></i></div><div class="val" id="sPending">0</div><div class="lbl">Pending</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--success-light);color:var(--success)"><i class="fas fa-check"></i></div><div class="val" id="sApproved">0</div><div class="lbl">Approved</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--purple-light);color:var(--purple)"><i class="fas fa-magnifying-glass"></i></div><div class="val" id="sInspected">0</div><div class="lbl">Inspected</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--info-light);color:var(--info)"><i class="fas fa-indian-rupee-sign"></i></div><div class="val" id="sRefunded">0</div><div class="lbl">Refunded</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--danger-light);color:var(--danger)"><i class="fas fa-times"></i></div><div class="val" id="sRejected">0</div><div class="lbl">Rejected</div></div>
+        <div class="stat-card"><div class="icon" style="background:#FDF4FF;color:#A21CAF"><i class="fas fa-exchange-alt"></i></div><div class="val" id="sExchanges">0</div><div class="lbl">Exchanges</div></div>
+        <div class="stat-card"><div class="icon" style="background:var(--success-light);color:var(--success)"><i class="fas fa-piggy-bank"></i></div><div class="val" id="sRevSaved">₹0</div><div class="lbl">Revenue Saved</div></div>
       </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h3><i class="fas fa-clock" style="color:var(--warning);margin-right:8px"></i>Recent Pending Returns</h3>
-        </div>
-        <div class="card-body" style="padding:0">
-          <table>
-            <thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Product</th><th>Amount</th><th>Date</th><th>Action</th></tr></thead>
-            <tbody id="recentPending"><tr><td colspan="7" class="empty-state"><i class="fas fa-inbox"></i><p>No pending returns</p></td></tr></tbody>
-          </table>
-        </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-chart-area" style="color:var(--primary);margin-right:6px"></i>Returns Trend</h3></div><div class="card-body"><div class="chart-container"><canvas id="trendChart" role="img" aria-label="Daily returns trend">Daily returns chart</canvas></div></div></div>
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-chart-pie" style="color:var(--warning);margin-right:6px"></i>Top Reasons</h3></div><div class="card-body"><div class="chart-container"><canvas id="reasonChart" role="img" aria-label="Return reasons breakdown">Reasons chart</canvas></div></div></div>
       </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h3><i class="fas fa-link" style="color:var(--primary);margin-right:8px"></i>Customer Return Portal</h3>
-        </div>
-        <div class="card-body">
-          <p style="color:var(--gray-600);font-size:13px;margin-bottom:8px">Share this link with your customers so they can submit return requests:</p>
-          <div class="customer-link">
-            <i class="fas fa-external-link-alt"></i>
-            <a id="portalLink" href="#" target="_blank"></a>
-          </div>
-        </div>
-      </div>
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-clock" style="color:var(--warning);margin-right:6px"></i>Recent Pending</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Product</th><th>Type</th><th>Amount</th><th>Date</th><th>Action</th></tr></thead><tbody id="recentTb"><tr><td colspan="8" class="empty"><i class="fas fa-inbox"></i>No pending</td></tr></tbody></table></div></div>
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-link" style="color:var(--primary);margin-right:6px"></i>Customer Portal</h3></div><div class="card-body"><p style="color:var(--gray-500);font-size:12px;margin-bottom:6px">Share this link with customers:</p><div class="customer-link"><i class="fas fa-external-link-alt"></i><a id="portalLink" href="#" target="_blank"></a></div></div></div>
     </div>
 
     <!-- Returns Page -->
     <div class="page" id="page-returns">
       <div class="filter-bar">
-        <button class="filter-btn active" onclick="filterReturns('all',this)">All</button>
-        <button class="filter-btn" onclick="filterReturns('pending',this)">Pending</button>
-        <button class="filter-btn" onclick="filterReturns('approved',this)">Approved</button>
-        <button class="filter-btn" onclick="filterReturns('rejected',this)">Rejected</button>
-        <button class="filter-btn" onclick="filterReturns('processed',this)">Processed</button>
-      </div>
-      <div class="card">
-        <div class="card-body" style="padding:0">
-          <table>
-            <thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Product</th><th>Reason</th><th>Refund</th><th>Amount</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
-            <tbody id="returnsTable"><tr><td colspan="10" class="empty-state"><i class="fas fa-inbox"></i><p>Loading returns...</p></td></tr></tbody>
-          </table>
+        <button class="filter-btn active" onclick="filterR('all',this)">All</button>
+        <button class="filter-btn" onclick="filterR('pending',this)">Pending</button>
+        <button class="filter-btn" onclick="filterR('approved',this)">Approved</button>
+        <button class="filter-btn" onclick="filterR('inspected',this)">Inspected</button>
+        <button class="filter-btn" onclick="filterR('refunded',this)">Refunded</button>
+        <button class="filter-btn" onclick="filterR('processed',this)">Processed</button>
+        <button class="filter-btn" onclick="filterR('rejected',this)">Rejected</button>
+        <button class="filter-btn" onclick="filterR('archived',this)">Archived</button>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          <button class="date-btn active" onclick="filterDate('all',this)">All Time</button>
+          <button class="date-btn" onclick="filterDate('today',this)">Today</button>
+          <button class="date-btn" onclick="filterDate('7',this)">7 Days</button>
+          <button class="date-btn" onclick="filterDate('30',this)">30 Days</button>
         </div>
       </div>
+      <div class="card"><div class="card-body" style="padding:0"><table><thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Product</th><th>Reason</th><th>Type</th><th>Refund</th><th>Amount</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody id="returnsTb"><tr><td colspan="11" class="empty">Loading...</td></tr></tbody></table></div></div>
+    </div>
+
+    <!-- Exchanges Page -->
+    <div class="page" id="page-exchanges">
+      <div class="filter-bar">
+        <button class="filter-btn active" onclick="filterE('all',this)">All</button>
+        <button class="filter-btn" onclick="filterE('pending',this)">Requested</button>
+        <button class="filter-btn" onclick="filterE('approved',this)">Approved</button>
+        <button class="filter-btn" onclick="filterE('inspected',this)">Inspected</button>
+        <button class="filter-btn" onclick="filterE('processed',this)">Exchanged</button>
+        <button class="filter-btn" onclick="filterE('rejected',this)">Rejected</button>
+      </div>
+      <div class="card"><div class="card-body" style="padding:0"><table><thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Original Product</th><th>Exchange For</th><th>Reason</th><th>Amount</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody id="exchangeTb"><tr><td colspan="10" class="empty"><i class="fas fa-exchange-alt"></i>No exchanges yet</td></tr></tbody></table></div></div>
+    </div>
+
+    <!-- Analytics Page -->
+    <div class="page" id="page-analytics">
+      <div class="filter-bar"><div style="display:flex;gap:4px"><button class="date-btn active" onclick="loadAnalytics(7,this)">7 Days</button><button class="date-btn" onclick="loadAnalytics(30,this)">30 Days</button><button class="date-btn" onclick="loadAnalytics(90,this)">90 Days</button></div></div>
+      <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="stat-card"><div class="lbl">Requests Raised</div><div class="val" id="aRaised">0</div></div>
+        <div class="stat-card"><div class="lbl">Request Rate</div><div class="val" id="aRate">0%</div></div>
+        <div class="stat-card"><div class="lbl">Request Value</div><div class="val" id="aValue">₹0</div></div>
+        <div class="stat-card"><div class="lbl">Revenue Saved</div><div class="val" id="aSaved" style="color:var(--success)">₹0</div></div>
+      </div>
+      <div class="tab-row"><div class="tab-item active" onclick="showATab('requests',this)">Requests</div><div class="tab-item" onclick="showATab('value',this)">Request Value</div><div class="tab-item" onclick="showATab('saved',this)">Revenue Saved</div></div>
+      <div class="card"><div class="card-body"><div class="chart-container" style="height:300px"><canvas id="analyticsChart" role="img" aria-label="Analytics chart">Analytics data</canvas></div></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><div class="card-hdr"><h3>By Return Reason</h3></div><div class="card-body"><div class="chart-container"><canvas id="reasonPieChart" role="img" aria-label="Reasons pie chart">Reasons</canvas></div></div></div>
+        <div class="card"><div class="card-hdr"><h3>By Status</h3></div><div class="card-body"><div class="chart-container"><canvas id="statusPieChart" role="img" aria-label="Status pie chart">Status</canvas></div></div></div>
+      </div>
+    </div>
+
+    <!-- Export Page -->
+    <div class="page" id="page-export">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-download" style="color:var(--primary);margin-right:6px"></i>Export Data</h3></div><div class="card-body">
+        <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Download all your return and exchange data as CSV file.</p>
+        <button class="btn btn-primary" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Download CSV</button>
+      </div></div>
     </div>
 
     <!-- Orders Page -->
-    <div class="page" id="page-orders">
-      <div class="card">
-        <div class="card-header"><h3>Shopify Orders</h3></div>
-        <div class="card-body" style="padding:0">
-          <table>
-            <thead><tr><th>Order</th><th>Customer</th><th>Email</th><th>Total</th><th>Payment</th><th>Fulfillment</th><th>Date</th></tr></thead>
-            <tbody id="ordersTable"><tr><td colspan="7" class="empty-state"><i class="fas fa-shopping-bag"></i><p>Connect a store to view orders</p></td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <div class="page" id="page-orders"><div class="card"><div class="card-hdr"><h3>Shopify Orders</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>Order</th><th>Customer</th><th>Email</th><th>Total</th><th>Payment</th><th>Fulfillment</th><th>Date</th></tr></thead><tbody id="ordersTb"><tr><td colspan="7" class="empty"><i class="fas fa-shopping-bag"></i>Connect store to view orders</td></tr></tbody></table></div></div></div>
 
     <!-- Stores Page -->
-    <div class="page" id="page-stores">
-      <div class="card">
-        <div class="card-header"><h3>Connected Stores</h3></div>
-        <div class="card-body">
-          <div id="connectedStores"></div>
-          <div class="connect-section" style="margin-top:16px">
-            <input type="text" id="shopDomain" placeholder="yourstore.myshopify.com">
-            <button class="topbar-btn" onclick="connectShop()"><i class="fas fa-plug"></i> Connect</button>
-          </div>
-        </div>
-      </div>
+    <div class="page" id="page-stores"><div class="card"><div class="card-hdr"><h3>Connected Stores</h3></div><div class="card-body"><div id="connectedStores"></div><div class="connect-section" style="margin-top:12px"><input type="text" id="shopDomain" placeholder="yourstore.myshopify.com"><button class="btn btn-primary" onclick="connectShop()"><i class="fas fa-plug"></i> Connect</button></div></div></div></div>
+
+    <!-- Policies Page -->
+    <div class="page" id="page-policies">
+      <div class="card"><div class="card-hdr"><h3>Return & Exchange Policies</h3></div><div class="card-body">
+        <div class="fr"><div class="fg"><label>Return Window (days)</label><input type="number" id="setReturnWindow" value="14"></div><div class="fg"><label>Exchange Window (days)</label><input type="number" id="setExchangeWindow" value="14"></div></div>
+        <div class="fr"><div class="fg"><label>Auto-approve returns under (INR)</label><input type="number" id="setAutoApprove" value="0" placeholder="0 = disabled"></div><div class="fg"><label>Auto-approve enabled</label><select id="setAutoEnabled"><option value="false">No</option><option value="true">Yes</option></select></div></div>
+        <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save Policies</button>
+      </div></div>
     </div>
 
-    <!-- Admin Page -->
-    <div class="page" id="page-admin">
-      <div class="card">
-        <div class="card-header">
-          <h3><i class="fas fa-shield-halved" style="color:var(--primary);margin-right:8px"></i>All Merchants</h3>
-          <button class="topbar-btn" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i> Refresh</button>
-        </div>
-        <div class="card-body" style="padding:0">
-          <table>
-            <thead><tr><th>Store</th><th>Domain</th><th>Email</th><th>Plan</th><th>Connected</th><th>Action</th></tr></thead>
-            <tbody id="adminStoresTable"><tr><td colspan="6" class="empty-state"><i class="fas fa-store"></i><p>Loading merchants...</p></td></tr></tbody>
-          </table>
-        </div>
-      </div>
+    <!-- Reasons Page -->
+    <div class="page" id="page-reasons">
+      <div class="card"><div class="card-hdr"><h3>Return & Exchange Reasons</h3></div><div class="card-body">
+        <div class="fg"><label>Return Reasons (one per line)</label><textarea id="setReturnReasons" rows="6">Damaged Product
+Wrong Item Received
+Size/Fit Issue
+Quality Not As Expected
+Not As Described
+Changed My Mind</textarea></div>
+        <div class="fg"><label>Exchange Reasons (one per line)</label><textarea id="setExchangeReasons" rows="4">Wrong Size
+Wrong Color
+Want Different Product</textarea></div>
+        <div class="fg"><label>Refund Methods (one per line)</label><textarea id="setRefundMethods" rows="4">Original Payment Method
+Bank Transfer
+Store Credit
+UPI</textarea></div>
+        <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save Reasons</button>
+      </div></div>
+    </div>
 
-      <div class="card">
-        <div class="card-header">
-          <h3><i class="fas fa-gift" style="color:var(--warning);margin-right:8px"></i>Offer / Free Access</h3>
+    <!-- Logistics Page -->
+    <div class="page" id="page-logistics">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:var(--primary);margin-right:6px"></i>Logistics Partners</h3><span class="badge" id="shipBadge" style="display:none">Connected</span></div><div class="card-body">
+        <div id="shipNotConn">
+          <p style="color:var(--gray-500);font-size:12px;margin-bottom:12px">Connect your Shiprocket account for automated return pickups.</p>
+          <div style="background:var(--warning-light);padding:10px 14px;border-radius:var(--radius);margin-bottom:12px;font-size:12px;color:var(--warning)"><i class="fas fa-info-circle"></i> No account? <a href="https://app.shiprocket.in/register" target="_blank" style="color:var(--warning);font-weight:600">Create free</a></div>
+          <div class="fr"><div class="fg"><label>Shiprocket Email</label><input type="email" id="shipEmail" placeholder="email"></div><div class="fg"><label>Password</label><input type="password" id="shipPass" placeholder="password"></div></div>
+          <button class="btn btn-primary" onclick="connectShiprocket()"><i class="fas fa-plug"></i> Connect Shiprocket</button>
         </div>
-        <div class="card-body">
-          <p style="color:var(--gray-600);font-size:13px;margin-bottom:16px">Kisi bhi seller ko free plan ya special offer do. Offer code generate karo ya direct store ko free access do.</p>
-
-          <div class="card" style="border:1px solid var(--gray-200);margin-bottom:16px">
-            <div class="card-header"><h3>Direct Free Access</h3></div>
-            <div class="card-body">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Store Domain</label>
-                  <input type="text" id="freeStoreDomain" placeholder="store.myshopify.com">
-                </div>
-                <div class="form-group">
-                  <label>Plan</label>
-                  <select id="freePlan">
-                    <option value="starter">Starter (₹999)</option>
-                    <option value="growth">Growth (₹1,999)</option>
-                    <option value="pro">Pro (₹4,999)</option>
-                    <option value="free">Free (Lifetime)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-group">
-                <label>Duration</label>
-                <select id="freeDuration">
-                  <option value="30">30 days free</option>
-                  <option value="90">90 days free</option>
-                  <option value="180">6 months free</option>
-                  <option value="365">1 year free</option>
-                  <option value="9999">Lifetime free</option>
-                </select>
-              </div>
-              <button class="topbar-btn" onclick="giveFreePlan()"><i class="fas fa-gift"></i> Give Free Access</button>
-            </div>
-          </div>
-
-          <div class="card" style="border:1px solid var(--gray-200)">
-            <div class="card-header"><h3>Generate Offer Code</h3></div>
-            <div class="card-body">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Offer Code</label>
-                  <input type="text" id="offerCode" placeholder="WELCOME50">
-                </div>
-                <div class="form-group">
-                  <label>Discount Type</label>
-                  <select id="offerType">
-                    <option value="percent">Percentage Off</option>
-                    <option value="free_months">Free Months</option>
-                    <option value="free_forever">Free Forever</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Value</label>
-                  <input type="number" id="offerValue" placeholder="50 (% off or months free)">
-                </div>
-                <div class="form-group">
-                  <label>Max Uses</label>
-                  <input type="number" id="offerMaxUses" placeholder="100" value="100">
-                </div>
-              </div>
-              <button class="topbar-btn" onclick="createOffer()"><i class="fas fa-ticket"></i> Create Offer Code</button>
-            </div>
-          </div>
-
-          <div class="card" style="border:1px solid var(--gray-200);margin-top:16px">
-            <div class="card-header"><h3>Active Offers</h3></div>
-            <div class="card-body" style="padding:0">
-              <table>
-                <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Used</th><th>Max</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody id="offersTable"><tr><td colspan="7" class="empty-state"><i class="fas fa-ticket"></i><p>No offers yet</p></td></tr></tbody>
-              </table>
-            </div>
-          </div>
+        <div id="shipConn" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div style="width:40px;height:40px;border-radius:var(--radius);background:var(--success-light);color:var(--success);display:flex;align-items:center;justify-content:center;font-size:18px"><i class="fas fa-check-circle"></i></div><div><div style="font-weight:600;font-size:13px">Shiprocket Connected</div><div style="font-size:11px;color:var(--gray-400)" id="shipConnEmail"></div></div></div>
+          <button class="btn btn-danger" onclick="disconnectShiprocket()"><i class="fas fa-unlink"></i> Disconnect</button>
         </div>
-      </div>
+      </div></div>
+      <div class="card"><div class="card-hdr"><h3>Available Partners</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>Partner</th><th>Region</th><th>Status</th></tr></thead><tbody>
+        <tr><td><strong>Shiprocket</strong></td><td>India</td><td><span class="badge badge-approved" id="shipStatusBadge">Connect above</span></td></tr>
+        <tr><td><strong>Delhivery</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
+        <tr><td><strong>BlueDart</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
+        <tr><td><strong>Ecom Express</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
+        <tr><td><strong>Pickrr</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
+      </tbody></table></div></div>
+    </div>
 
-      <div class="card">
-        <div class="card-header">
-          <h3><i class="fas fa-chart-bar" style="color:var(--info);margin-right:8px"></i>Admin Stats</h3>
-        </div>
-        <div class="card-body">
-          <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
-            <div class="stat-card">
-              <div class="stat-icon" style="background:var(--primary-light);color:var(--primary)"><i class="fas fa-store"></i></div>
-              <div class="stat-value" id="adminTotalStores">0</div>
-              <div class="stat-label">Total Merchants</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon" style="background:var(--success-light);color:var(--success)"><i class="fas fa-indian-rupee-sign"></i></div>
-              <div class="stat-value" id="adminMRR">₹0</div>
-              <div class="stat-label">Monthly Revenue</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon" style="background:var(--warning-light);color:var(--warning)"><i class="fas fa-rotate-left"></i></div>
-              <div class="stat-value" id="adminTotalReturns">0</div>
-              <div class="stat-label">Total Returns</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon" style="background:var(--info-light);color:var(--info)"><i class="fas fa-ticket"></i></div>
-              <div class="stat-value" id="adminTotalOffers">0</div>
-              <div class="stat-label">Active Offers</div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- Notifications Page -->
+    <div class="page" id="page-notifications">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-bell" style="color:var(--warning);margin-right:6px"></i>Notification Settings</h3></div><div class="card-body">
+        <div class="fg"><label>Notify merchant on new return/exchange</label><select id="setNotifyEmail"><option value="true">Yes - Send email</option><option value="false">No</option></select></div>
+        <div class="fg"><label>Notification email (for alerts)</label><input type="email" id="setNotifyAddr" placeholder="your@email.com"></div>
+        <p style="color:var(--gray-400);font-size:12px;margin-top:16px"><i class="fas fa-info-circle"></i> WhatsApp notifications coming soon</p>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
+      </div></div>
     </div>
 
     <!-- Settings Page -->
     <div class="page" id="page-settings">
-      <div class="card">
-        <div class="card-header"><h3>Return Policy Settings</h3></div>
-        <div class="card-body">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Return window (days)</label>
-              <input type="number" value="7" id="returnWindow">
-            </div>
-            <div class="form-group">
-              <label>Auto-approve returns under</label>
-              <input type="number" placeholder="Amount in INR" id="autoApproveLimit">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Return reasons</label>
-            <textarea rows="4" id="returnReasons">Damaged Product
-Wrong Item Received
-Size/Fit Issue
-Quality Not As Expected
-Changed My Mind
-Product Not As Described</textarea>
-          </div>
-          <div class="form-group">
-            <label>Refund methods</label>
-            <textarea rows="3" id="refundMethods">Original Payment Method
-Bank Transfer
-Store Credit
-UPI</textarea>
-          </div>
-          <button class="topbar-btn" onclick="showAlert('Settings saved!','success')"><i class="fas fa-save"></i> Save Settings</button>
+      <div class="card"><div class="card-hdr"><h3>Portal Customization</h3></div><div class="card-body">
+        <div class="fr"><div class="fg"><label>Button Color</label><input type="color" id="setColor" value="#4F46E5" style="height:40px"></div><div class="fg"><label>Portal Preview</label><a id="portalPreview" href="#" target="_blank" class="btn btn-secondary" style="margin-top:20px"><i class="fas fa-external-link-alt"></i> Preview Portal</a></div></div>
+        <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
+      </div></div>
+      <div class="card"><div class="card-hdr"><h3>Billing</h3></div><div class="card-body">
+        <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+          <div style="text-align:center;padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg)"><div style="font-size:11px;color:var(--gray-500)">FREE</div><div style="font-size:22px;font-weight:700">₹0</div><div style="font-size:11px;color:var(--gray-400)">5 returns/mo</div></div>
+          <div style="text-align:center;padding:16px;border:2px solid var(--primary);border-radius:var(--radius-lg);background:var(--primary-light)"><div style="font-size:11px;color:var(--primary)">STARTER</div><div style="font-size:22px;font-weight:700">₹999</div><div style="font-size:11px;color:var(--gray-400)">50 returns/mo</div></div>
+          <div style="text-align:center;padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg)"><div style="font-size:11px;color:var(--gray-500)">GROWTH</div><div style="font-size:22px;font-weight:700">₹1,999</div><div style="font-size:11px;color:var(--gray-400)">200 returns/mo</div></div>
         </div>
-      </div>
+      </div></div>
+    </div>
 
-      <div class="card">
-        <div class="card-header">
-          <h3><i class="fas fa-truck" style="color:var(--primary);margin-right:8px"></i>Shiprocket Integration</h3>
-          <span class="badge" id="shiprocketBadge" style="display:none">Connected</span>
-        </div>
-        <div class="card-body">
-          <div id="shiprocketNotConnected">
-            <p style="color:var(--gray-600);font-size:13px;margin-bottom:16px">Connect your Shiprocket account to enable automatic return pickup scheduling. Shipping charges will be deducted from your Shiprocket wallet.</p>
-            <div style="background:var(--warning-light);padding:12px 16px;border-radius:var(--radius);margin-bottom:16px;font-size:13px;color:var(--warning)">
-              <i class="fas fa-info-circle"></i> Don't have a Shiprocket account? <a href="https://app.shiprocket.in/register" target="_blank" style="color:var(--warning);font-weight:600">Create free account</a>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Shiprocket Email</label>
-                <input type="email" id="shipEmail" placeholder="your@email.com">
-              </div>
-              <div class="form-group">
-                <label>Shiprocket Password</label>
-                <input type="password" id="shipPassword" placeholder="Your Shiprocket password">
-              </div>
-            </div>
-            <button class="topbar-btn" onclick="connectShiprocket()"><i class="fas fa-plug"></i> Connect Shiprocket</button>
-          </div>
-          <div id="shiprocketConnected" style="display:none">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-              <div style="width:44px;height:44px;border-radius:var(--radius);background:var(--success-light);color:var(--success);display:flex;align-items:center;justify-content:center;font-size:20px"><i class="fas fa-check-circle"></i></div>
-              <div>
-                <div style="font-weight:600">Shiprocket Connected</div>
-                <div style="font-size:12px;color:var(--gray-500)" id="shipConnectedEmail"></div>
-              </div>
-            </div>
-            <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Return pickups will be booked through your Shiprocket account. Charges will be deducted from your Shiprocket wallet.</p>
-            <button class="topbar-btn secondary" onclick="disconnectShiprocket()" style="color:var(--danger);border-color:var(--danger)"><i class="fas fa-unlink"></i> Disconnect</button>
-          </div>
-        </div>
-      </div>
+    <!-- Admin Page -->
+    <div class="page" id="page-admin">
+      <div class="card"><div class="card-hdr"><h3>All Merchants</h3><button class="btn btn-secondary" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i></button></div><div class="card-body" style="padding:0"><table><thead><tr><th>Store</th><th>Domain</th><th>Plan</th><th>Connected</th><th>Action</th></tr></thead><tbody id="adminTb"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></div>
+      <div class="card"><div class="card-hdr"><h3>Give Free Access</h3></div><div class="card-body"><div class="fr"><div class="fg"><label>Store Domain</label><input type="text" id="freeStore" placeholder="store.myshopify.com"></div><div class="fg"><label>Plan</label><select id="freePlan"><option value="free">Free</option><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option></select></div></div><button class="btn btn-primary" onclick="giveFreePlan()"><i class="fas fa-gift"></i> Give Access</button></div></div>
     </div>
   </div>
 </div>
 
-<!-- Create Return Modal -->
-<div class="modal-overlay" id="returnModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h3><i class="fas fa-plus-circle" style="color:var(--primary);margin-right:8px"></i>Create Return Request</h3>
-      <button class="modal-close" onclick="closeModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group"><label>Order ID</label><input type="text" id="fOrderId" placeholder="#1001"></div>
-        <div class="form-group"><label>Order Number</label><input type="text" id="fOrderNum" placeholder="ORD-1001"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Customer Name</label><input type="text" id="fName" placeholder="Full name"></div>
-        <div class="form-group"><label>Email</label><input type="email" id="fEmail" placeholder="customer@email.com"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Phone</label><input type="text" id="fPhone" placeholder="+91 98765 43210"></div>
-        <div class="form-group"><label>Amount (INR)</label><input type="number" id="fAmount" placeholder="0.00"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Product Name</label><input type="text" id="fProduct" placeholder="Product name"></div>
-        <div class="form-group"><label>SKU</label><input type="text" id="fSku" placeholder="SKU-123"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Quantity</label><input type="number" id="fQty" value="1" min="1"></div>
-        <div class="form-group">
-          <label>Refund Method</label>
-          <select id="fRefund">
-            <option value="original">Original Payment Method</option>
-            <option value="bank_transfer">Bank Transfer</option>
-            <option value="store_credit">Store Credit</option>
-            <option value="upi">UPI</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Return Reason</label>
-        <select id="fReason">
-          <option value="">Select reason</option>
-          <option value="damaged">Damaged Product</option>
-          <option value="wrong_item">Wrong Item Received</option>
-          <option value="size_issue">Size/Fit Issue</option>
-          <option value="quality_issue">Quality Not As Expected</option>
-          <option value="not_as_described">Not As Described</option>
-          <option value="changed_mind">Changed My Mind</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Additional Details</label><textarea id="fDetails" rows="2" placeholder="Any additional information..."></textarea></div>
-    </div>
-    <div class="modal-footer">
-      <button class="topbar-btn secondary" onclick="closeModal()">Cancel</button>
-      <button class="topbar-btn" onclick="createReturn()"><i class="fas fa-check"></i> Submit Return</button>
-    </div>
-  </div>
-</div>
+<!-- Modal -->
+<div class="modal-overlay" id="modal"><div class="modal"><div class="modal-hdr"><h3 id="modalTitle">Create Return</h3><button class="modal-close" onclick="closeModal()">&times;</button></div><div class="modal-body">
+  <div class="fr"><div class="fg"><label>Order ID</label><input type="text" id="fOrdId" placeholder="#1001"></div><div class="fg"><label>Order Number</label><input type="text" id="fOrdNum" placeholder="ORD-1001"></div></div>
+  <div class="fr"><div class="fg"><label>Customer Name</label><input type="text" id="fName" placeholder="Full name"></div><div class="fg"><label>Email</label><input type="email" id="fEmail" placeholder="email"></div></div>
+  <div class="fr"><div class="fg"><label>Phone</label><input type="text" id="fPhone" placeholder="+91"></div><div class="fg"><label>Amount (INR)</label><input type="number" id="fAmt" placeholder="0"></div></div>
+  <div class="fr"><div class="fg"><label>Product</label><input type="text" id="fProd" placeholder="Product name"></div><div class="fg"><label>SKU</label><input type="text" id="fSku" placeholder="SKU"></div></div>
+  <div id="exchangeFields" style="display:none"><div class="fr"><div class="fg"><label>Exchange For (Product)</label><input type="text" id="fExProd" placeholder="New product"></div><div class="fg"><label>Variant (Size/Color)</label><input type="text" id="fExVar" placeholder="L / Red"></div></div></div>
+  <div class="fr"><div class="fg"><label>Reason</label><select id="fReason"><option value="">Select</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong Item</option><option value="size_issue">Size Issue</option><option value="quality_issue">Quality Issue</option><option value="not_as_described">Not As Described</option><option value="changed_mind">Changed Mind</option></select></div><div class="fg"><label>Refund Method</label><select id="fRefund"><option value="original">Original Method</option><option value="bank_transfer">Bank Transfer</option><option value="store_credit">Store Credit</option><option value="upi">UPI</option></select></div></div>
+  <div class="fg"><label>Details</label><textarea id="fDetails" rows="2" placeholder="Additional info..."></textarea></div>
+</div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createReturn()"><i class="fas fa-check"></i> Submit</button></div></div></div>
 
 <script>
-let allReturns = [];
-let currentShop = '';
-let currentFilter = 'all';
+let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return';
+let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
+let analyticsData=null,curATab='requests';
 
-function showPage(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-'+page).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  event.currentTarget.classList.add('active');
-  const titles = {dashboard:'Dashboard',returns:'Returns',orders:'Orders',stores:'Stores',settings:'Settings',admin:'Admin Panel'};
-  document.getElementById('pageTitle').textContent = titles[page] || 'Dashboard';
-  if (page === 'orders' && currentShop) loadOrders();
-  if (page === 'admin') { loadAllStores(); loadOffers(); }
+function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin'}[p]||p;if(p==='orders'&&currentShop)loadOrders();if(p==='analytics')loadAnalytics(30);if(p==='admin'){loadAllStores();}if(p==='logistics')checkShiprocket();}
+function showAlert(m,t){const e=document.getElementById('alertBox');e.innerHTML=`<div class="alert alert-${t}"><i class="fas fa-${t==='success'?'check-circle':'exclamation-circle'}"></i>${m}</div>`;setTimeout(()=>e.innerHTML='',4000);}
+
+async function loadStores(){const r=await fetch('/api/shopify/stores');const s=await r.json();const el=document.getElementById('connectedStores');if(s.length){currentShop=s[0].shop_domain;el.innerHTML=s.map(x=>`<div class="connected-store"><i class="fas fa-check-circle"></i>${x.store_name||x.shop_domain}</div>`).join('');document.getElementById('storeStatus').style.display='flex';document.getElementById('storeName').textContent=s[0].store_name||s[0].shop_domain;document.getElementById('portalLink').href=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalLink').textContent=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalPreview').href=location.origin+'/return.html?shop='+currentShop;}else{el.innerHTML='<p style="color:var(--gray-400);font-size:12px">No stores connected</p>';}}
+function connectShop(){const s=document.getElementById('shopDomain').value.trim();if(!s)return showAlert('Enter store domain','error');location.href='/api/auth/shopify?shop='+s;}
+
+async function loadReturns(){const r=await fetch('/api/returns');allReturns=await r.json();updateStats();renderReturns();renderExchanges();renderRecent();}
+function updateStats(){const t=allReturns.length,p=allReturns.filter(r=>r.status==='pending').length,a=allReturns.filter(r=>r.status==='approved').length,i=allReturns.filter(r=>r.status==='inspected').length,rf=allReturns.filter(r=>r.status==='refunded').length,rj=allReturns.filter(r=>r.status==='rejected').length,ex=allReturns.filter(r=>r.type==='exchange').length,amt=allReturns.reduce((s,r)=>s+parseFloat(r.amount||0),0),saved=allReturns.filter(r=>r.type==='exchange').reduce((s,r)=>s+parseFloat(r.amount||0),0);
+document.getElementById('sTotal').textContent=t;document.getElementById('sPending').textContent=p;document.getElementById('sApproved').textContent=a;document.getElementById('sInspected').textContent=i;document.getElementById('sRefunded').textContent=rf;document.getElementById('sRejected').textContent=rj;document.getElementById('sExchanges').textContent=ex;document.getElementById('sRevSaved').textContent='₹'+Math.round(saved).toLocaleString('en-IN');document.getElementById('pendingBadge').textContent=p;}
+
+function renderReturns(){const returns=allReturns.filter(r=>r.type!=='exchange');let f=curFilter==='all'?returns:returns.filter(r=>r.status===curFilter);if(curDate!=='all'){const now=new Date();let from;if(curDate==='today'){from=new Date(now.getFullYear(),now.getMonth(),now.getDate());}else{from=new Date(now-parseInt(curDate)*86400000);}f=f.filter(r=>new Date(r.created_at)>=from);}
+const tb=document.getElementById('returnsTb');if(!f.length){tb.innerHTML='<tr><td colspan="11" class="empty"><i class="fas fa-inbox"></i>No returns found</td></tr>';return;}
+tb.innerHTML=f.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${r.order_number||r.order_id||'-'}</td><td><div>${r.customer_name||'-'}</div><div style="font-size:10px;color:var(--gray-400)">${r.customer_email||''}</div></td><td>${r.product_name||'-'}</td><td>${fmtReason(r.reason)}</td><td><span class="badge badge-pending">Return</span></td><td style="font-size:11px">${fmtRefund(r.refund_method)}</td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
+
+function renderExchanges(){const ex=allReturns.filter(r=>r.type==='exchange');const tb=document.getElementById('exchangeTb');if(!ex.length){tb.innerHTML='<tr><td colspan="10" class="empty"><i class="fas fa-exchange-alt"></i>No exchanges</td></tr>';return;}
+tb.innerHTML=ex.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><strong>${r.exchange_product||'-'}</strong> ${r.exchange_variant?'('+r.exchange_variant+')':''}</td><td>${fmtReason(r.reason)}</td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
+
+function renderRecent(){const p=allReturns.filter(r=>r.status==='pending').slice(0,5);const tb=document.getElementById('recentTb');if(!p.length){tb.innerHTML='<tr><td colspan="8" class="empty"><i class="fas fa-check-circle" style="color:var(--success)"></i>No pending</td></tr>';return;}
+tb.innerHTML=p.map(r=>`<tr><td>#${r.id}</td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><span class="badge badge-${r.type==='exchange'?'exchange':'pending'}">${r.type||'return'}</span></td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td><button class="action-btn" style="background:var(--success-light);color:var(--success)" onclick="upd(${r.id},'approved')"><i class="fas fa-check"></i></button><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="upd(${r.id},'rejected')"><i class="fas fa-times"></i></button></td></tr>`).join('');}
+
+function getActions(r){
+  if(r.status==='pending')return`<button class="action-btn" style="background:var(--success-light);color:var(--success)" onclick="upd(${r.id},'approved')">Approve</button><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="upd(${r.id},'rejected')">Reject</button>`;
+  if(r.status==='approved')return`<button class="action-btn" style="background:var(--purple-light);color:var(--purple)" onclick="upd(${r.id},'inspected')">Inspect</button>`;
+  if(r.status==='inspected')return`<button class="action-btn" style="background:var(--info-light);color:var(--info)" onclick="upd(${r.id},'refunded')">Refund</button>`;
+  if(r.status==='refunded')return`<button class="action-btn" style="background:#DBEAFE;color:#1D4ED8" onclick="upd(${r.id},'processed')">Complete</button>`;
+  return`<button class="action-btn" style="background:var(--gray-100);color:var(--gray-500)" onclick="archive(${r.id})">Archive</button>`;
 }
 
-function showAlert(msg, type) {
-  const el = document.getElementById('alertBox');
-  el.innerHTML = `<div class="alert alert-${type}"><i class="fas fa-${type==='success'?'check-circle':'exclamation-circle'}"></i>${msg}</div>`;
-  setTimeout(() => el.innerHTML = '', 4000);
-}
+function filterR(s,b){curFilter=s;document.querySelectorAll('#page-returns .filter-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderReturns();}
+function filterDate(d,b){curDate=d;document.querySelectorAll('.date-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderReturns();}
+function filterE(s,b){document.querySelectorAll('#page-exchanges .filter-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');const ex=allReturns.filter(r=>r.type==='exchange');const f=s==='all'?ex:ex.filter(r=>r.status===s);const tb=document.getElementById('exchangeTb');if(!f.length){tb.innerHTML='<tr><td colspan="10" class="empty">No exchanges</td></tr>';return;}
+tb.innerHTML=f.map(r=>`<tr><td>#${r.id}</td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><strong>${r.exchange_product||'-'}</strong></td><td>${fmtReason(r.reason)}</td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
 
-async function loadStores() {
-  const r = await fetch('/api/shopify/stores');
-  const stores = await r.json();
-  const el = document.getElementById('connectedStores');
-  if (stores.length) {
-    currentShop = stores[0].shop_domain;
-    el.innerHTML = stores.map(s =>
-      `<div class="connected-store"><i class="fas fa-check-circle"></i> ${s.store_name || s.shop_domain}</div>`
-    ).join('');
-    document.getElementById('storeStatus').style.display = 'flex';
-    document.getElementById('storeName').textContent = stores[0].store_name || stores[0].shop_domain;
-    document.getElementById('portalLink').href = window.location.origin + '/return.html?shop=' + currentShop;
-    document.getElementById('portalLink').textContent = window.location.origin + '/return.html?shop=' + currentShop;
-  } else {
-    el.innerHTML = '<p style="color:var(--gray-400);font-size:13px">No stores connected yet</p>';
-  }
-}
+async function loadOrders(){if(!currentShop)return;const tb=document.getElementById('ordersTb');tb.innerHTML='<tr><td colspan="7" class="empty"><i class="fas fa-spinner fa-spin"></i>Loading...</td></tr>';try{const r=await fetch('/api/shopify/orders?shop='+currentShop);const o=await r.json();if(!o.length){tb.innerHTML='<tr><td colspan="7" class="empty">No orders</td></tr>';return;}tb.innerHTML=o.map(o=>`<tr><td><strong>${o.name||'-'}</strong></td><td>${o.customer?o.customer.first_name+' '+o.customer.last_name:'-'}</td><td style="font-size:11px">${o.email||'-'}</td><td class="amount">₹${Number(o.total_price||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${o.financial_status==='paid'?'approved':'pending'}">${o.financial_status||'-'}</span></td><td><span class="badge badge-${o.fulfillment_status==='fulfilled'?'processed':'pending'}">${o.fulfillment_status||'unfulfilled'}</span></td><td style="font-size:11px">${fmtDate(o.created_at)}</td></tr>`).join('');}catch(e){tb.innerHTML='<tr><td colspan="7" class="empty">Error loading</td></tr>';}}
 
-function connectShop() {
-  const s = document.getElementById('shopDomain').value.trim();
-  if (!s) return showAlert('Please enter store domain', 'error');
-  window.location.href = '/api/auth/shopify?shop=' + s;
-}
+// Analytics
+async function loadAnalytics(days,btn){if(btn){document.querySelectorAll('#page-analytics .date-btn').forEach(x=>x.classList.remove('active'));btn.classList.add('active');}try{const r=await fetch(`/api/analytics?shop=${currentShop}&days=${days}`);analyticsData=await r.json();const raised=analyticsData.daily.reduce((s,d)=>s+parseInt(d.count),0);const value=analyticsData.daily.reduce((s,d)=>s+parseFloat(d.amount),0);const saved=analyticsData.daily.reduce((s,d)=>s+parseFloat(d.saved),0);document.getElementById('aRaised').textContent=raised;document.getElementById('aValue').textContent='₹'+Math.round(value).toLocaleString('en-IN');document.getElementById('aSaved').textContent='₹'+Math.round(saved).toLocaleString('en-IN');renderAnalyticsChart();renderReasonPie();renderStatusPie();}catch(e){}}
 
-async function loadReturns() {
-  const r = await fetch('/api/returns');
-  allReturns = await r.json();
-  updateStats();
-  renderReturns();
-  renderRecentPending();
-}
+function showATab(tab,btn){curATab=tab;document.querySelectorAll('.tab-item').forEach(x=>x.classList.remove('active'));btn.classList.add('active');renderAnalyticsChart();}
 
-function updateStats() {
-  const total = allReturns.length;
-  const pending = allReturns.filter(r => r.status === 'pending').length;
-  const approved = allReturns.filter(r => r.status === 'approved').length;
-  const rejected = allReturns.filter(r => r.status === 'rejected').length;
-  const amount = allReturns.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statPending').textContent = pending;
-  document.getElementById('statApproved').textContent = approved;
-  document.getElementById('statRejected').textContent = rejected;
-  document.getElementById('statAmount').textContent = '₹' + Math.round(amount).toLocaleString('en-IN');
-  document.getElementById('pendingBadge').textContent = pending;
-}
+function renderAnalyticsChart(){if(!analyticsData)return;const labels=analyticsData.daily.map(d=>new Date(d.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'}));const key=curATab==='requests'?'count':curATab==='value'?'amount':'saved';const data=analyticsData.daily.map(d=>curATab==='requests'?parseInt(d[key]):Math.round(parseFloat(d[key])));if(analyticsChartObj)analyticsChartObj.destroy();analyticsChartObj=new Chart(document.getElementById('analyticsChart'),{type:'line',data:{labels,datasets:[{label:curATab,data,borderColor:'#4F46E5',backgroundColor:'rgba(79,70,229,0.1)',fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});}
 
-function renderReturns() {
-  const filtered = currentFilter === 'all' ? allReturns : allReturns.filter(r => r.status === currentFilter);
-  const tb = document.getElementById('returnsTable');
-  if (!filtered.length) {
-    tb.innerHTML = '<tr><td colspan="10" class="empty-state"><i class="fas fa-inbox"></i><p>No returns found</p></td></tr>';
-    return;
-  }
-  tb.innerHTML = filtered.map(r => `<tr>
-    <td><strong>#${r.id}</strong></td>
-    <td>${r.order_number || r.order_id || '-'}</td>
-    <td><div>${r.customer_name||'-'}</div><div style="font-size:11px;color:var(--gray-400)">${r.customer_email||''}</div></td>
-    <td>${r.product_name||'-'}</td>
-    <td><span style="font-size:12px">${formatReason(r.reason)}</span></td>
-    <td><span style="font-size:12px">${formatRefund(r.refund_method)}</span></td>
-    <td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td>
-    <td><span class="badge badge-${r.status}">${r.status}</span></td>
-    <td style="font-size:12px;color:var(--gray-400)">${formatDate(r.created_at)}</td>
-    <td>${getActions(r)}</td>
-  </tr>`).join('');
-}
+function renderReasonPie(){if(!analyticsData)return;const labels=analyticsData.by_reason.map(r=>fmtReason(r.reason));const data=analyticsData.by_reason.map(r=>parseInt(r.count));const colors=['#4F46E5','#059669','#D97706','#DC2626','#0284C7','#7C3AED','#EC4899','#F59E0B'];if(reasonPieObj)reasonPieObj.destroy();reasonPieObj=new Chart(document.getElementById('reasonPieChart'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});}
 
-function renderRecentPending() {
-  const pending = allReturns.filter(r => r.status === 'pending').slice(0, 5);
-  const tb = document.getElementById('recentPending');
-  if (!pending.length) {
-    tb.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-check-circle" style="color:var(--success)"></i><p>No pending returns!</p></td></tr>';
-    return;
-  }
-  tb.innerHTML = pending.map(r => `<tr>
-    <td><strong>#${r.id}</strong></td>
-    <td>${r.order_number || r.order_id || '-'}</td>
-    <td>${r.customer_name||'-'}</td>
-    <td>${r.product_name||'-'}</td>
-    <td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td>
-    <td style="font-size:12px;color:var(--gray-400)">${formatDate(r.created_at)}</td>
-    <td>
-      <button class="action-btn approve" onclick="updateReturn(${r.id},'approved')"><i class="fas fa-check"></i></button>
-      <button class="action-btn reject" onclick="updateReturn(${r.id},'rejected')"><i class="fas fa-times"></i></button>
-    </td>
-  </tr>`).join('');
-}
+function renderStatusPie(){if(!analyticsData)return;const labels=analyticsData.by_status.map(r=>r.status);const data=analyticsData.by_status.map(r=>parseInt(r.count));const colors=['#D97706','#059669','#7C3AED','#0284C7','#1D4ED8','#DC2626','#9CA3AF'];if(statusPieObj)statusPieObj.destroy();statusPieObj=new Chart(document.getElementById('statusPieChart'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});}
 
-function getActions(r) {
-  if (r.status === 'pending') return `<button class="action-btn approve" onclick="updateReturn(${r.id},'approved')"><i class="fas fa-check"></i> Approve</button><button class="action-btn reject" onclick="updateReturn(${r.id},'rejected')"><i class="fas fa-times"></i> Reject</button>`;
-  if (r.status === 'approved') return `<button class="action-btn process" onclick="updateReturn(${r.id},'processed')"><i class="fas fa-truck"></i> Process</button>`;
-  return '<span style="color:var(--gray-400);font-size:12px">-</span>';
-}
+// Dashboard charts
+function renderDashCharts(){const last7=allReturns.filter(r=>{const d=new Date(r.created_at);return d>=new Date(Date.now()-7*86400000);});const days={};for(let i=6;i>=0;i--){const d=new Date(Date.now()-i*86400000);const k=d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});days[k]={count:0,reasons:{}};}last7.forEach(r=>{const k=new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'});if(days[k])days[k].count++;});
+if(trendChartObj)trendChartObj.destroy();trendChartObj=new Chart(document.getElementById('trendChart'),{type:'bar',data:{labels:Object.keys(days),datasets:[{label:'Returns',data:Object.values(days).map(d=>d.count),backgroundColor:'rgba(79,70,229,0.7)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+const reasons={};allReturns.forEach(r=>{const k=fmtReason(r.reason);reasons[k]=(reasons[k]||0)+1;});const sorted=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,5);if(reasonChartObj)reasonChartObj.destroy();reasonChartObj=new Chart(document.getElementById('reasonChart'),{type:'doughnut',data:{labels:sorted.map(s=>s[0]),datasets:[{data:sorted.map(s=>s[1]),backgroundColor:['#4F46E5','#059669','#D97706','#DC2626','#0284C7']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});}
 
-function filterReturns(status, btn) {
-  currentFilter = status;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderReturns();
-}
+function openModal(type){modalType=type;document.getElementById('modalTitle').textContent=type==='exchange'?'Create Exchange':'Create Return';document.getElementById('exchangeFields').style.display=type==='exchange'?'block':'none';document.getElementById('modal').classList.add('show');}
+function closeModal(){document.getElementById('modal').classList.remove('show');}
 
-async function loadOrders() {
-  if (!currentShop) return;
-  const tb = document.getElementById('ordersTable');
-  tb.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-spinner fa-spin"></i><p>Loading orders...</p></td></tr>';
-  try {
-    const r = await fetch('/api/shopify/orders?shop=' + currentShop);
-    const orders = await r.json();
-    if (!orders.length) { tb.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-shopping-bag"></i><p>No orders found</p></td></tr>'; return; }
-    tb.innerHTML = orders.map(o => `<tr>
-      <td><strong>${o.name||'-'}</strong></td>
-      <td>${o.customer?o.customer.first_name+' '+o.customer.last_name:'-'}</td>
-      <td style="font-size:12px">${o.email||'-'}</td>
-      <td class="amount">₹${Number(o.total_price||0).toLocaleString('en-IN')}</td>
-      <td><span class="badge badge-${o.financial_status==='paid'?'approved':'pending'}">${o.financial_status||'-'}</span></td>
-      <td><span class="badge badge-${o.fulfillment_status==='fulfilled'?'processed':'pending'}">${o.fulfillment_status||'unfulfilled'}</span></td>
-      <td style="font-size:12px;color:var(--gray-400)">${formatDate(o.created_at)}</td>
-    </tr>`).join('');
-  } catch(e) { tb.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-exclamation-triangle"></i><p>Error loading orders</p></td></tr>'; }
-}
+async function createReturn(){const data={order_id:document.getElementById('fOrdId').value,order_number:document.getElementById('fOrdNum').value,customer_name:document.getElementById('fName').value,customer_email:document.getElementById('fEmail').value,customer_phone:document.getElementById('fPhone').value,product_name:document.getElementById('fProd').value,product_sku:document.getElementById('fSku').value,amount:document.getElementById('fAmt').value,reason:document.getElementById('fReason').value,reason_detail:document.getElementById('fDetails').value,refund_method:document.getElementById('fRefund').value,shop_domain:currentShop,type:modalType,exchange_product:document.getElementById('fExProd')?.value||'',exchange_variant:document.getElementById('fExVar')?.value||''};
+if(!data.customer_name)return showAlert('Customer name required','error');const r=await fetch('/api/returns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(r.ok){showAlert((modalType==='exchange'?'Exchange':'Return')+' created!','success');closeModal();loadReturns();}else showAlert('Failed','error');}
 
-function openModal() { document.getElementById('returnModal').classList.add('show'); }
-function closeModal() { document.getElementById('returnModal').classList.remove('show'); }
+async function upd(id,status){await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});showAlert(`#${id} → ${status}`,'success');loadReturns();}
+async function archive(id){await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archived:true})});showAlert(`#${id} archived`,'success');loadReturns();}
 
-async function createReturn() {
-  const data = {
-    order_id: document.getElementById('fOrderId').value,
-    order_number: document.getElementById('fOrderNum').value,
-    customer_name: document.getElementById('fName').value,
-    customer_email: document.getElementById('fEmail').value,
-    customer_phone: document.getElementById('fPhone').value,
-    product_name: document.getElementById('fProduct').value,
-    product_sku: document.getElementById('fSku').value,
-    quantity: document.getElementById('fQty').value,
-    amount: document.getElementById('fAmount').value,
-    reason: document.getElementById('fReason').value,
-    reason_detail: document.getElementById('fDetails').value,
-    refund_method: document.getElementById('fRefund').value,
-    shop_domain: currentShop
-  };
-  if (!data.customer_name) return showAlert('Customer name is required', 'error');
-  const r = await fetch('/api/returns', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
-  if (r.ok) { showAlert('Return request created successfully!','success'); closeModal(); loadReturns(); }
-  else showAlert('Failed to create return','error');
-}
+function exportCSV(){window.open('/api/returns/export?shop='+currentShop,'_blank');}
 
-async function updateReturn(id, status) {
-  await fetch('/api/returns/'+id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status}) });
-  showAlert(`Return #${id} ${status}!`, 'success');
-  loadReturns();
-}
+async function saveSettings(){if(!currentShop)return showAlert('Connect store first','error');const data={shop:currentShop,portal_color:document.getElementById('setColor').value,return_window:document.getElementById('setReturnWindow').value,exchange_window:document.getElementById('setExchangeWindow').value,auto_approve_under:document.getElementById('setAutoApprove').value,auto_approve_enabled:document.getElementById('setAutoEnabled').value==='true',notify_email:document.getElementById('setNotifyEmail').value==='true',return_reasons:document.getElementById('setReturnReasons').value,exchange_reasons:document.getElementById('setExchangeReasons').value,refund_methods:document.getElementById('setRefundMethods').value};
+await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});showAlert('Settings saved!','success');}
 
-function formatReason(r) {
-  const map = {damaged:'Damaged',wrong_item:'Wrong Item',size_issue:'Size Issue',quality_issue:'Quality Issue',not_as_described:'Not As Described',changed_mind:'Changed Mind'};
-  return map[r] || r || '-';
-}
-function formatRefund(r) {
-  const map = {original:'Original Method',bank_transfer:'Bank Transfer',store_credit:'Store Credit',upi:'UPI',cod:'COD Refund'};
-  return map[r] || r || '-';
-}
-function formatDate(d) {
-  if (!d) return '-';
-  const dt = new Date(d);
-  return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
-}
+async function checkShiprocket(){if(!currentShop)return;try{const r=await fetch('/api/shiprocket/status?shop='+currentShop);const d=await r.json();if(d.connected){document.getElementById('shipNotConn').style.display='none';document.getElementById('shipConn').style.display='block';document.getElementById('shipBadge').style.display='inline-flex';document.getElementById('shipBadge').className='badge badge-approved';document.getElementById('shipConnEmail').textContent=d.email;document.getElementById('shipStatusBadge').textContent='Connected';document.getElementById('shipStatusBadge').className='badge badge-approved';}else{document.getElementById('shipNotConn').style.display='block';document.getElementById('shipConn').style.display='none';document.getElementById('shipBadge').style.display='none';}}catch(e){}}
+async function connectShiprocket(){const e=document.getElementById('shipEmail').value.trim(),p=document.getElementById('shipPass').value;if(!e||!p)return showAlert('Enter Shiprocket credentials','error');if(!currentShop)return showAlert('Connect store first','error');try{const r=await fetch('/api/shiprocket/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,email:e,password:p})});const d=await r.json();if(d.ok){showAlert('Shiprocket connected!','success');checkShiprocket();}else showAlert(d.error||'Failed','error');}catch(e){showAlert('Error','error');}}
+async function disconnectShiprocket(){await fetch('/api/shiprocket/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop})});showAlert('Disconnected','success');checkShiprocket();}
 
-// Admin functions
-const ADMIN_KEY = 'taskly2026admin';
-let allOffers = [];
+// Admin
+const AK='taskly2026admin';
+function checkAdmin(){const p=new URLSearchParams(location.search);if(p.get('admin')===AK)localStorage.setItem('isAdmin','true');if(localStorage.getItem('isAdmin')==='true')document.getElementById('adminNav').style.display='flex';}
+async function loadAllStores(){const r=await fetch('/api/shopify/stores');const s=await r.json();const tb=document.getElementById('adminTb');if(!s.length){tb.innerHTML='<tr><td colspan="5" class="empty">No merchants</td></tr>';return;}
+tb.innerHTML=s.map(x=>`<tr><td><strong>${x.store_name||'-'}</strong></td><td style="font-size:11px">${x.shop_domain}</td><td><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span></td><td style="font-size:11px">${fmtDate(x.created_at)}</td><td><select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select></td></tr>`).join('');}
+async function changePlan(shop,plan){await fetch('/api/admin/change-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Plan changed to ${plan}`,'success');}
+async function giveFreePlan(){const shop=document.getElementById('freeStore').value.trim(),plan=document.getElementById('freePlan').value;if(!shop)return showAlert('Enter domain','error');await fetch('/api/admin/free-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Free access given!`,'success');}
 
-function checkAdmin() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('admin') === ADMIN_KEY) {
-    localStorage.setItem('isAdmin', 'true');
-  }
-  if (localStorage.getItem('isAdmin') === 'true') {
-    document.getElementById('adminNav').style.display = 'flex';
-  }
-}
+function fmtReason(r){return{damaged:'Damaged',wrong_item:'Wrong Item',size_issue:'Size Issue',quality_issue:'Quality Issue',not_as_described:'Not As Described',changed_mind:'Changed Mind'}[r]||r||'-';}
+function fmtRefund(r){return{original:'Original',bank_transfer:'Bank Transfer',store_credit:'Store Credit',upi:'UPI',cod:'COD'}[r]||r||'-';}
+function fmtDate(d){if(!d)return'-';return new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
 
-async function checkShiprocket() {
-  if (!currentShop) return;
-  try {
-    const r = await fetch('/api/shiprocket/status?shop=' + currentShop);
-    const d = await r.json();
-    if (d.connected) {
-      document.getElementById('shiprocketNotConnected').style.display = 'none';
-      document.getElementById('shiprocketConnected').style.display = 'block';
-      document.getElementById('shiprocketBadge').style.display = 'inline-flex';
-      document.getElementById('shiprocketBadge').className = 'badge badge-approved';
-      document.getElementById('shipConnectedEmail').textContent = d.email;
-    } else {
-      document.getElementById('shiprocketNotConnected').style.display = 'block';
-      document.getElementById('shiprocketConnected').style.display = 'none';
-      document.getElementById('shiprocketBadge').style.display = 'none';
-    }
-  } catch(e) {}
-}
-
-async function connectShiprocket() {
-  const email = document.getElementById('shipEmail').value.trim();
-  const password = document.getElementById('shipPassword').value;
-  if (!email || !password) return showAlert('Shiprocket email aur password daalo', 'error');
-  if (!currentShop) return showAlert('Pehle Shopify store connect karo', 'error');
-  const btn = event.currentTarget;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
-  btn.disabled = true;
-  try {
-    const r = await fetch('/api/shiprocket/connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop:currentShop, email, password}) });
-    const d = await r.json();
-    if (d.ok) { showAlert('Shiprocket connected successfully!', 'success'); checkShiprocket(); }
-    else showAlert(d.error || 'Invalid credentials', 'error');
-  } catch(e) { showAlert('Connection failed', 'error'); }
-  btn.innerHTML = '<i class="fas fa-plug"></i> Connect Shiprocket';
-  btn.disabled = false;
-}
-
-async function disconnectShiprocket() {
-  if (!currentShop) return;
-  await fetch('/api/shiprocket/disconnect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop:currentShop}) });
-  showAlert('Shiprocket disconnected', 'success');
-  checkShiprocket();
-}
-
-async function loadAllStores() {
-  const r = await fetch('/api/shopify/stores');
-  const stores = await r.json();
-  const tb = document.getElementById('adminStoresTable');
-  document.getElementById('adminTotalStores').textContent = stores.length;
-  const planPrices = {starter:999,growth:1999,pro:4999,free:0};
-  const mrr = stores.reduce((s,st) => s + (planPrices[st.plan] || 999), 0);
-  document.getElementById('adminMRR').textContent = '₹' + mrr.toLocaleString('en-IN');
-  document.getElementById('adminTotalReturns').textContent = allReturns.length;
-  if (!stores.length) {
-    tb.innerHTML = '<tr><td colspan="6" class="empty-state"><i class="fas fa-store"></i><p>No merchants yet</p></td></tr>';
-    return;
-  }
-  tb.innerHTML = stores.map(s => `<tr>
-    <td><strong>${s.store_name || '-'}</strong></td>
-    <td style="font-size:12px">${s.shop_domain}</td>
-    <td style="font-size:12px">${s.store_email || '-'}</td>
-    <td><span class="badge badge-${s.plan==='pro'?'approved':s.plan==='growth'?'processed':'pending'}">${(s.plan||'starter').toUpperCase()}</span></td>
-    <td style="font-size:12px;color:var(--gray-400)">${formatDate(s.created_at)}</td>
-    <td>
-      <select onchange="changePlan('${s.shop_domain}',this.value)" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
-        <option value="starter" ${s.plan==='starter'?'selected':''}>Starter</option>
-        <option value="growth" ${s.plan==='growth'?'selected':''}>Growth</option>
-        <option value="pro" ${s.plan==='pro'?'selected':''}>Pro</option>
-        <option value="free" ${s.plan==='free'?'selected':''}>Free</option>
-      </select>
-    </td>
-  </tr>`).join('');
-}
-
-async function changePlan(shop, plan) {
-  await fetch('/api/admin/change-plan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop,plan,admin_key:ADMIN_KEY}) });
-  showAlert(`${shop} plan changed to ${plan.toUpperCase()}!`, 'success');
-  loadAllStores();
-}
-
-async function giveFreePlan() {
-  const shop = document.getElementById('freeStoreDomain').value.trim();
-  const plan = document.getElementById('freePlan').value;
-  const duration = document.getElementById('freeDuration').value;
-  if (!shop) return showAlert('Store domain daalo', 'error');
-  await fetch('/api/admin/free-access', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop,plan,duration_days:parseInt(duration),admin_key:ADMIN_KEY}) });
-  showAlert(`${shop} ko ${plan.toUpperCase()} plan ${duration} din ke liye free diya!`, 'success');
-  document.getElementById('freeStoreDomain').value = '';
-  loadAllStores();
-}
-
-async function createOffer() {
-  const code = document.getElementById('offerCode').value.trim().toUpperCase();
-  const type = document.getElementById('offerType').value;
-  const value = document.getElementById('offerValue').value;
-  const max_uses = document.getElementById('offerMaxUses').value;
-  if (!code) return showAlert('Offer code daalo', 'error');
-  const r = await fetch('/api/admin/offers', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code,type,value:parseInt(value),max_uses:parseInt(max_uses),admin_key:ADMIN_KEY}) });
-  if (r.ok) { showAlert(`Offer "${code}" created!`, 'success'); document.getElementById('offerCode').value=''; loadOffers(); }
-  else showAlert('Error creating offer', 'error');
-}
-
-async function loadOffers() {
-  try {
-    const r = await fetch('/api/admin/offers?admin_key='+ADMIN_KEY);
-    allOffers = await r.json();
-    document.getElementById('adminTotalOffers').textContent = allOffers.filter(o=>o.active).length;
-    const tb = document.getElementById('offersTable');
-    if (!allOffers.length) { tb.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fas fa-ticket"></i><p>No offers yet</p></td></tr>'; return; }
-    tb.innerHTML = allOffers.map(o => `<tr>
-      <td><strong>${o.code}</strong></td>
-      <td>${o.type}</td>
-      <td>${o.type==='percent'?o.value+'%':o.type==='free_months'?o.value+' months':'Forever'}</td>
-      <td>${o.used||0}</td>
-      <td>${o.max_uses}</td>
-      <td><span class="badge badge-${o.active?'approved':'rejected'}">${o.active?'Active':'Inactive'}</span></td>
-      <td><button class="action-btn ${o.active?'reject':'approve'}" onclick="toggleOffer(${o.id},${!o.active})">${o.active?'Disable':'Enable'}</button></td>
-    </tr>`).join('');
-  } catch(e) {}
-}
-
-async function toggleOffer(id, active) {
-  await fetch('/api/admin/offers/'+id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({active,admin_key:ADMIN_KEY}) });
-  loadOffers();
-}
-
-const params = new URLSearchParams(window.location.search);
-if (params.get('connected')) showAlert('Shopify store connected successfully!','success');
+const params=new URLSearchParams(location.search);
+if(params.get('connected'))showAlert('Store connected!','success');
 checkAdmin();
-loadStores().then(() => checkShiprocket());
-loadReturns();
+loadStores().then(()=>{checkShiprocket();});
+loadReturns().then(()=>renderDashCharts());
 </script>
 </body>
 </html>
