@@ -674,10 +674,163 @@ app.post('/api/offers/redeem', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '2.2.0', shiprocket: !!SHIPROCKET_EMAIL }));
+// Automation Rules (Wonder Bot)
+app.get('/api/automation/rules', async (req, res) => {
+  const { shop } = req.query;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), name VARCHAR(255),
+      condition_field VARCHAR(50), condition_operator VARCHAR(20), condition_value TEXT,
+      action_type VARCHAR(50), action_value TEXT, active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('SELECT * FROM automation_rules WHERE shop_domain=$1 ORDER BY created_at DESC', [shop||'']);
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
+});
+
+app.post('/api/automation/rules', async (req, res) => {
+  const { shop, name, condition_field, condition_operator, condition_value, action_type, action_value } = req.body;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), name VARCHAR(255),
+      condition_field VARCHAR(50), condition_operator VARCHAR(20), condition_value TEXT,
+      action_type VARCHAR(50), action_value TEXT, active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('INSERT INTO automation_rules (shop_domain,name,condition_field,condition_operator,condition_value,action_type,action_value) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [shop,name,condition_field,condition_operator,condition_value,action_type,action_value]);
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/automation/rules/:id', async (req, res) => {
+  await pool.query('DELETE FROM automation_rules WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// Promotions (Wonder Promotions - incentivize exchange over refund)
+app.get('/api/promotions', async (req, res) => {
+  const { shop } = req.query;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), name VARCHAR(255),
+      type VARCHAR(50) DEFAULT 'store_credit_bonus', bonus_percent INTEGER DEFAULT 10,
+      message TEXT DEFAULT 'Choose exchange and get 10% bonus store credit!',
+      active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('SELECT * FROM promotions WHERE shop_domain=$1', [shop||'']);
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
+});
+
+app.post('/api/promotions', async (req, res) => {
+  const { shop, name, type, bonus_percent, message } = req.body;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), name VARCHAR(255),
+      type VARCHAR(50) DEFAULT 'store_credit_bonus', bonus_percent INTEGER DEFAULT 10,
+      message TEXT, active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('INSERT INTO promotions (shop_domain,name,type,bonus_percent,message) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [shop,name||'Exchange Bonus',type||'store_credit_bonus',bonus_percent||10,message||'']);
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/promotions/:id', async (req, res) => {
+  const { active } = req.body;
+  const r = await pool.query('UPDATE promotions SET active=$1 WHERE id=$2 RETURNING *', [active, req.params.id]);
+  res.json(r.rows[0]);
+});
+
+// Webhooks
+app.get('/api/webhooks', async (req, res) => {
+  const { shop } = req.query;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), url TEXT NOT NULL,
+      events TEXT DEFAULT 'return.created,return.approved,return.rejected,return.refunded',
+      active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('SELECT * FROM webhooks WHERE shop_domain=$1', [shop||'']);
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
+});
+
+app.post('/api/webhooks', async (req, res) => {
+  const { shop, url, events } = req.body;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), url TEXT NOT NULL,
+      events TEXT DEFAULT 'return.created,return.approved,return.rejected,return.refunded',
+      active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('INSERT INTO webhooks (shop_domain,url,events) VALUES ($1,$2,$3) RETURNING *', [shop,url,events||'return.created,return.approved']);
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/webhooks/:id', async (req, res) => {
+  await pool.query('DELETE FROM webhooks WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// Mark order as returned on Shopify (tags)
+app.post('/api/shopify/tag-order', async (req, res) => {
+  const { shop, order_id, tags } = req.body;
+  if (!shop || !order_id) return res.status(400).json({ error: 'shop and order_id required' });
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
+  try {
+    const r = await fetch(`https://${shop}/admin/api/2024-01/orders/${order_id}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
+      body: JSON.stringify({ order: { id: order_id, tags: tags || 'return-requested' } })
+    });
+    const d = await r.json();
+    res.json(d);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Locations (multiple warehouse addresses)
+app.get('/api/locations', async (req, res) => {
+  const { shop } = req.query;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS locations (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), name VARCHAR(255),
+      address TEXT, city VARCHAR(100), state VARCHAR(100), pincode VARCHAR(20),
+      phone VARCHAR(50), is_default BOOLEAN DEFAULT false, created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    const r = await pool.query('SELECT * FROM locations WHERE shop_domain=$1 ORDER BY is_default DESC', [shop||'']);
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
+});
+
+app.post('/api/locations', async (req, res) => {
+  const { shop, name, address, city, state, pincode, phone, is_default } = req.body;
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS locations (
+      id SERIAL PRIMARY KEY, shop_domain VARCHAR(255), name VARCHAR(255),
+      address TEXT, city VARCHAR(100), state VARCHAR(100), pincode VARCHAR(20),
+      phone VARCHAR(50), is_default BOOLEAN DEFAULT false, created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    if (is_default) await pool.query('UPDATE locations SET is_default=false WHERE shop_domain=$1', [shop]);
+    const r = await pool.query('INSERT INTO locations (shop_domain,name,address,city,state,pincode,phone,is_default) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
+      [shop,name,address,city,state,pincode,phone,is_default||false]);
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/locations/:id', async (req, res) => {
+  await pool.query('DELETE FROM locations WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL }));
 
 app.use(express.static(path.join(__dirname, '../client/build')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 
 const PORT = process.env.PORT || 3001;
-initDB().then(() => app.listen(PORT, () => console.log('Taskly Returns v2.2 running on port ' + PORT)));
+initDB().then(() => app.listen(PORT, () => console.log('Taskly Returns v3.0 running on port ' + PORT)));

@@ -116,8 +116,14 @@ tbody tr:hover{background:var(--gray-50)}
     <div class="nav-item" onclick="showPage('policies')"><i class="fas fa-shield-halved"></i> Policies</div>
     <div class="nav-item" onclick="showPage('reasons')"><i class="fas fa-list-check"></i> Reasons</div>
     <div class="nav-item" onclick="showPage('logistics')"><i class="fas fa-truck"></i> Logistics</div>
+    <div class="nav-item" onclick="showPage('locations')"><i class="fas fa-map-marker-alt"></i> Locations</div>
     <div class="nav-item" onclick="showPage('notifications')"><i class="fas fa-bell"></i> Notifications</div>
+    <div class="nav-label">Advanced</div>
+    <div class="nav-item" onclick="showPage('automation')"><i class="fas fa-robot"></i> Automation <span class="nav-new">New</span></div>
+    <div class="nav-item" onclick="showPage('promotions')"><i class="fas fa-gift"></i> Promotions <span class="nav-new">New</span></div>
+    <div class="nav-item" onclick="showPage('webhooks')"><i class="fas fa-code"></i> Webhooks</div>
     <div class="nav-item" onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</div>
+    <div class="nav-item" onclick="showPage('help')"><i class="fas fa-question-circle"></i> Help Center</div>
     <div class="nav-item" onclick="showPage('admin')" id="adminNav" style="display:none"><i class="fas fa-shield-halved"></i> Admin</div>
   </nav>
   <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:10px;color:var(--gray-500)">Taskly Returns v3.0</div>
@@ -301,6 +307,65 @@ UPI</textarea></div>
       </div></div>
     </div>
 
+    <!-- Locations Page -->
+    <div class="page" id="page-locations">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-map-marker-alt" style="color:var(--danger);margin-right:6px"></i>Warehouse Locations</h3><button class="btn btn-primary" onclick="addLocation()"><i class="fas fa-plus"></i> Add Location</button></div><div class="card-body" style="padding:0"><table><thead><tr><th>Name</th><th>Address</th><th>City</th><th>State</th><th>Pincode</th><th>Phone</th><th>Default</th><th>Action</th></tr></thead><tbody id="locationsTb"><tr><td colspan="8" class="empty"><i class="fas fa-map-marker-alt"></i>No locations added</td></tr></tbody></table></div></div>
+    </div>
+
+    <!-- Automation Page (Wonder Bot) -->
+    <div class="page" id="page-automation">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-robot" style="color:var(--purple);margin-right:6px"></i>Automation Rules</h3></div><div class="card-body">
+        <p style="color:var(--gray-500);font-size:12px;margin-bottom:16px">Create rules to automatically perform actions. Example: Auto-approve returns under ₹500.</p>
+        <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;margin-bottom:16px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:12px">Create New Rule</div>
+          <div class="fr"><div class="fg"><label>Rule Name</label><input type="text" id="ruleName" placeholder="Auto approve small returns"></div><div class="fg"><label>When (Condition)</label><select id="ruleField"><option value="amount">Amount</option><option value="reason">Reason</option><option value="type">Type</option></select></div></div>
+          <div class="fr"><div class="fg"><label>Operator</label><select id="ruleOp"><option value="less_than">Less Than</option><option value="equals">Equals</option><option value="greater_than">Greater Than</option><option value="contains">Contains</option></select></div><div class="fg"><label>Value</label><input type="text" id="ruleVal" placeholder="500"></div></div>
+          <div class="fr"><div class="fg"><label>Then (Action)</label><select id="ruleAction"><option value="auto_approve">Auto Approve</option><option value="auto_reject">Auto Reject</option><option value="flag_risk">Flag as At Risk</option><option value="add_tag">Add Tag to Order</option></select></div><div class="fg"><label>&nbsp;</label><button class="btn btn-primary" onclick="createRule()"><i class="fas fa-plus"></i> Create Rule</button></div></div>
+        </div>
+        <table><thead><tr><th>Rule</th><th>Condition</th><th>Action</th><th>Status</th><th>Delete</th></tr></thead><tbody id="rulesTb"><tr><td colspan="5" class="empty"><i class="fas fa-robot"></i>No rules yet</td></tr></tbody></table>
+      </div></div>
+    </div>
+
+    <!-- Promotions Page (Wonder Promotions) -->
+    <div class="page" id="page-promotions">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-gift" style="color:var(--success);margin-right:6px"></i>Promotions</h3></div><div class="card-body">
+        <p style="color:var(--gray-500);font-size:12px;margin-bottom:16px">Incentivize customers to choose exchanges or store credit instead of refunds — retain more revenue!</p>
+        <div style="background:var(--success-light);border:1px solid #A7F3D0;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:12px;color:var(--success)">Create Promotion</div>
+          <div class="fr"><div class="fg"><label>Name</label><input type="text" id="promoName" placeholder="Exchange Bonus"></div><div class="fg"><label>Type</label><select id="promoType"><option value="store_credit_bonus">Store Credit Bonus</option><option value="discount_on_exchange">Discount on Exchange</option><option value="free_shipping">Free Shipping on Exchange</option></select></div></div>
+          <div class="fr"><div class="fg"><label>Bonus %</label><input type="number" id="promoPercent" value="10" placeholder="10"></div><div class="fg"><label>Customer Message</label><input type="text" id="promoMsg" placeholder="Choose exchange & get 10% bonus!"></div></div>
+          <button class="btn btn-success" onclick="createPromo()"><i class="fas fa-plus"></i> Create Promotion</button>
+        </div>
+        <table><thead><tr><th>Name</th><th>Type</th><th>Bonus</th><th>Message</th><th>Status</th><th>Action</th></tr></thead><tbody id="promosTb"><tr><td colspan="6" class="empty"><i class="fas fa-gift"></i>No promotions yet</td></tr></tbody></table>
+      </div></div>
+    </div>
+
+    <!-- Webhooks Page -->
+    <div class="page" id="page-webhooks">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-code" style="color:var(--info);margin-right:6px"></i>Webhooks</h3></div><div class="card-body">
+        <p style="color:var(--gray-500);font-size:12px;margin-bottom:16px">Receive real-time return/exchange updates via webhook push to your systems.</p>
+        <div style="background:var(--info-light);border:1px solid #BAE6FD;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px">
+          <div class="fr"><div class="fg"><label>Webhook URL</label><input type="text" id="webhookUrl" placeholder="https://your-app.com/webhook"></div><div class="fg"><label>Events</label><select id="webhookEvents"><option value="return.created,return.approved,return.rejected,return.refunded">All Events</option><option value="return.created">Return Created Only</option><option value="return.approved,return.rejected">Approval Events</option><option value="return.refunded">Refund Events</option></select></div></div>
+          <button class="btn btn-primary" onclick="createWebhook()"><i class="fas fa-plus"></i> Add Webhook</button>
+        </div>
+        <table><thead><tr><th>URL</th><th>Events</th><th>Status</th><th>Action</th></tr></thead><tbody id="webhooksTb"><tr><td colspan="4" class="empty"><i class="fas fa-code"></i>No webhooks</td></tr></tbody></table>
+      </div></div>
+    </div>
+
+    <!-- Help Center Page -->
+    <div class="page" id="page-help">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-question-circle" style="color:var(--info);margin-right:6px"></i>Help Center</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg);cursor:pointer" onclick="showAlert('Guide opening...','success')"><div style="font-size:20px;margin-bottom:8px"><i class="fas fa-book" style="color:var(--primary)"></i></div><div style="font-weight:600;font-size:13px">Getting Started</div><div style="font-size:11px;color:var(--gray-400)">Setup your store, policies, and go live</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg);cursor:pointer"><div style="font-size:20px;margin-bottom:8px"><i class="fas fa-truck" style="color:var(--success)"></i></div><div style="font-weight:600;font-size:13px">Logistics Setup</div><div style="font-size:11px;color:var(--gray-400)">Connect Shiprocket and manage pickups</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg);cursor:pointer"><div style="font-size:20px;margin-bottom:8px"><i class="fas fa-exchange-alt" style="color:var(--purple)"></i></div><div style="font-weight:600;font-size:13px">Returns & Exchanges</div><div style="font-size:11px;color:var(--gray-400)">Process returns, approve exchanges</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg);cursor:pointer"><div style="font-size:20px;margin-bottom:8px"><i class="fas fa-robot" style="color:var(--warning)"></i></div><div style="font-weight:600;font-size:13px">Automation Rules</div><div style="font-size:11px;color:var(--gray-400)">Auto-approve, auto-reject, fraud flags</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg);cursor:pointer"><div style="font-size:20px;margin-bottom:8px"><i class="fas fa-chart-line" style="color:var(--info)"></i></div><div style="font-weight:600;font-size:13px">Analytics Guide</div><div style="font-size:11px;color:var(--gray-400)">Understand your return metrics</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:var(--radius-lg);cursor:pointer"><div style="font-size:20px;margin-bottom:8px"><i class="fas fa-envelope" style="color:var(--danger)"></i></div><div style="font-weight:600;font-size:13px">Contact Support</div><div style="font-size:11px;color:var(--gray-400)">Email: ajeetkumar.saas@gmail.com</div></div>
+        </div>
+      </div></div>
+    </div>
+
     <!-- Admin Page -->
     <div class="page" id="page-admin">
       <div class="card"><div class="card-hdr"><h3>All Merchants</h3><button class="btn btn-secondary" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i></button></div><div class="card-body" style="padding:0"><table><thead><tr><th>Store</th><th>Domain</th><th>Plan</th><th>Connected</th><th>Action</th></tr></thead><tbody id="adminTb"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></div>
@@ -325,7 +390,7 @@ let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
 let analyticsData=null,curATab='requests';
 
-function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin'}[p]||p;if(p==='orders'&&currentShop)loadOrders();if(p==='analytics')loadAnalytics(30);if(p==='admin'){loadAllStores();}if(p==='logistics')checkShiprocket();}
+function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin'}[p]||p;if(p==='orders'&&currentShop)loadOrders();if(p==='analytics')loadAnalytics(30);if(p==='admin'){loadAllStores();}if(p==='logistics')checkShiprocket();if(p==='automation')loadRules();if(p==='promotions')loadPromos();if(p==='webhooks')loadWebhooks();if(p==='locations')loadLocations();}
 function showAlert(m,t){const e=document.getElementById('alertBox');e.innerHTML=`<div class="alert alert-${t}"><i class="fas fa-${t==='success'?'check-circle':'exclamation-circle'}"></i>${m}</div>`;setTimeout(()=>e.innerHTML='',4000);}
 
 async function loadStores(){const r=await fetch('/api/shopify/stores');const s=await r.json();const el=document.getElementById('connectedStores');if(s.length){currentShop=s[0].shop_domain;el.innerHTML=s.map(x=>`<div class="connected-store"><i class="fas fa-check-circle"></i>${x.store_name||x.shop_domain}</div>`).join('');document.getElementById('storeStatus').style.display='flex';document.getElementById('storeName').textContent=s[0].store_name||s[0].shop_domain;document.getElementById('portalLink').href=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalLink').textContent=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalPreview').href=location.origin+'/return.html?shop='+currentShop;}else{el.innerHTML='<p style="color:var(--gray-400);font-size:12px">No stores connected</p>';}}
@@ -401,6 +466,26 @@ async function loadAllStores(){const r=await fetch('/api/shopify/stores');const 
 tb.innerHTML=s.map(x=>`<tr><td><strong>${x.store_name||'-'}</strong></td><td style="font-size:11px">${x.shop_domain}</td><td><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span></td><td style="font-size:11px">${fmtDate(x.created_at)}</td><td><select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select></td></tr>`).join('');}
 async function changePlan(shop,plan){await fetch('/api/admin/change-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Plan changed to ${plan}`,'success');}
 async function giveFreePlan(){const shop=document.getElementById('freeStore').value.trim(),plan=document.getElementById('freePlan').value;if(!shop)return showAlert('Enter domain','error');await fetch('/api/admin/free-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Free access given!`,'success');}
+
+// Automation Rules
+async function loadRules(){try{const r=await fetch('/api/automation/rules?shop='+currentShop);const d=await r.json();const tb=document.getElementById('rulesTb');if(!d.length){tb.innerHTML='<tr><td colspan="5" class="empty"><i class="fas fa-robot"></i>No rules</td></tr>';return;}tb.innerHTML=d.map(x=>`<tr><td><strong>${x.name}</strong></td><td>${x.condition_field} ${x.condition_operator} ${x.condition_value}</td><td><span class="badge badge-approved">${x.action_type}</span></td><td><span class="badge badge-${x.active?'approved':'archived'}">${x.active?'Active':'Off'}</span></td><td><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="deleteRule(${x.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('');}catch(e){}}
+async function createRule(){const data={shop:currentShop,name:document.getElementById('ruleName').value,condition_field:document.getElementById('ruleField').value,condition_operator:document.getElementById('ruleOp').value,condition_value:document.getElementById('ruleVal').value,action_type:document.getElementById('ruleAction').value};if(!data.name)return showAlert('Rule name required','error');await fetch('/api/automation/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});showAlert('Rule created!','success');document.getElementById('ruleName').value='';loadRules();}
+async function deleteRule(id){await fetch('/api/automation/rules/'+id,{method:'DELETE'});showAlert('Rule deleted','success');loadRules();}
+
+// Promotions
+async function loadPromos(){try{const r=await fetch('/api/promotions?shop='+currentShop);const d=await r.json();const tb=document.getElementById('promosTb');if(!d.length){tb.innerHTML='<tr><td colspan="6" class="empty"><i class="fas fa-gift"></i>No promotions</td></tr>';return;}tb.innerHTML=d.map(x=>`<tr><td><strong>${x.name}</strong></td><td>${x.type}</td><td>${x.bonus_percent}%</td><td style="font-size:11px">${x.message||'-'}</td><td><span class="badge badge-${x.active?'approved':'archived'}">${x.active?'Active':'Off'}</span></td><td><button class="action-btn" style="background:${x.active?'var(--danger-light)':'var(--success-light)'};color:${x.active?'var(--danger)':'var(--success)'}" onclick="togglePromo(${x.id},${!x.active})">${x.active?'Disable':'Enable'}</button></td></tr>`).join('');}catch(e){}}
+async function createPromo(){const data={shop:currentShop,name:document.getElementById('promoName').value,type:document.getElementById('promoType').value,bonus_percent:document.getElementById('promoPercent').value,message:document.getElementById('promoMsg').value};if(!data.name)return showAlert('Name required','error');await fetch('/api/promotions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});showAlert('Promotion created!','success');loadPromos();}
+async function togglePromo(id,active){await fetch('/api/promotions/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active})});loadPromos();}
+
+// Webhooks
+async function loadWebhooks(){try{const r=await fetch('/api/webhooks?shop='+currentShop);const d=await r.json();const tb=document.getElementById('webhooksTb');if(!d.length){tb.innerHTML='<tr><td colspan="4" class="empty"><i class="fas fa-code"></i>No webhooks</td></tr>';return;}tb.innerHTML=d.map(x=>`<tr><td style="font-size:11px;word-break:break-all">${x.url}</td><td style="font-size:10px">${x.events}</td><td><span class="badge badge-approved">Active</span></td><td><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="deleteWebhook(${x.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('');}catch(e){}}
+async function createWebhook(){const url=document.getElementById('webhookUrl').value.trim();if(!url)return showAlert('URL required','error');await fetch('/api/webhooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,url,events:document.getElementById('webhookEvents').value})});showAlert('Webhook added!','success');document.getElementById('webhookUrl').value='';loadWebhooks();}
+async function deleteWebhook(id){await fetch('/api/webhooks/'+id,{method:'DELETE'});showAlert('Deleted','success');loadWebhooks();}
+
+// Locations
+async function loadLocations(){try{const r=await fetch('/api/locations?shop='+currentShop);const d=await r.json();const tb=document.getElementById('locationsTb');if(!d.length){tb.innerHTML='<tr><td colspan="8" class="empty"><i class="fas fa-map-marker-alt"></i>No locations</td></tr>';return;}tb.innerHTML=d.map(x=>`<tr><td><strong>${x.name}</strong></td><td style="font-size:11px">${x.address||'-'}</td><td>${x.city||'-'}</td><td>${x.state||'-'}</td><td>${x.pincode||'-'}</td><td>${x.phone||'-'}</td><td>${x.is_default?'<span class="badge badge-approved">Default</span>':'-'}</td><td><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="deleteLocation(${x.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('');}catch(e){}}
+function addLocation(){const name=prompt('Location name (e.g. Main Warehouse):');if(!name)return;const address=prompt('Address:');const city=prompt('City:');const state=prompt('State:');const pincode=prompt('Pincode:');const phone=prompt('Phone:');fetch('/api/locations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,name,address,city,state,pincode,phone,is_default:false})}).then(()=>{showAlert('Location added!','success');loadLocations();});}
+async function deleteLocation(id){await fetch('/api/locations/'+id,{method:'DELETE'});showAlert('Deleted','success');loadLocations();}
 
 function fmtReason(r){return{damaged:'Damaged',wrong_item:'Wrong Item',size_issue:'Size Issue',quality_issue:'Quality Issue',not_as_described:'Not As Described',changed_mind:'Changed Mind'}[r]||r||'-';}
 function fmtRefund(r){return{original:'Original',bank_transfer:'Bank Transfer',store_credit:'Store Credit',upi:'UPI',cod:'COD'}[r]||r||'-';}
