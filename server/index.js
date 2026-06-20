@@ -95,6 +95,10 @@ async function initDB() {
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS store_name VARCHAR(255) DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS store_email VARCHAR(255) DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS plan VARCHAR(50) DEFAULT 'starter'`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_email VARCHAR(255) DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_password TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_token TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_connected BOOLEAN DEFAULT false`);
   } catch(e) {}
   console.log('DB ready');
 }
@@ -372,12 +376,76 @@ app.get('/api/returns/track/:id', async (req, res) => {
   res.json(r.rows[0]);
 });
 
-// Shiprocket APIs
-app.post('/api/shiprocket/pickup', async (req, res) => {
-  const { return_id, customer_name, customer_email, customer_phone, customer_address, customer_city, customer_state, customer_pincode, product_name, product_sku, quantity, amount, order_id } = req.body;
-  if (!return_id) return res.status(400).json({ error: 'return_id required' });
+// Shiprocket Connect (per seller)
+app.post('/api/shiprocket/connect', async (req, res) => {
+  const { shop, email, password } = req.body;
+  if (!shop || !email || !password) return res.status(400).json({ error: 'shop, email, password required' });
   try {
-    const orderData = await shiprocketAPI('/orders/create/return', 'POST', {
+    const r = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const d = await r.json();
+    if (!d.token) return res.status(400).json({ error: 'Invalid Shiprocket credentials' });
+    await pool.query(
+      'UPDATE shopify_stores SET shiprocket_email=$1, shiprocket_password=$2, shiprocket_token=$3, shiprocket_connected=true WHERE shop_domain=$4',
+      [email, password, d.token, shop]
+    );
+    res.json({ ok: true, message: 'Shiprocket connected successfully!' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/shiprocket/disconnect', async (req, res) => {
+  const { shop } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query(
+    'UPDATE shopify_stores SET shiprocket_email=$1, shiprocket_password=$2, shiprocket_token=$3, shiprocket_connected=false WHERE shop_domain=$4',
+    ['', '', '', shop]
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/shiprocket/status', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  const r = await pool.query('SELECT shiprocket_connected, shiprocket_email FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!r.rows.length) return res.json({ connected: false });
+  res.json({ connected: r.rows[0].shiprocket_connected, email: r.rows[0].shiprocket_email });
+});
+
+async function getSellerShiprocketToken(shop) {
+  const r = await pool.query('SELECT shiprocket_token, shiprocket_email, shiprocket_password FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!r.rows.length || !r.rows[0].shiprocket_email) return null;
+  let token = r.rows[0].shiprocket_token;
+  if (!token) {
+    const resp = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: r.rows[0].shiprocket_email, password: r.rows[0].shiprocket_password })
+    });
+    const d = await resp.json();
+    token = d.token;
+    if (token) await pool.query('UPDATE shopify_stores SET shiprocket_token=$1 WHERE shop_domain=$2', [token, shop]);
+  }
+  return token;
+}
+
+async function sellerShiprocketAPI(shop, endpoint, method, body) {
+  const token = await getSellerShiprocketToken(shop);
+  if (!token) throw new Error('Shiprocket not connected for this store');
+  const opts = { method, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(`${SHIPROCKET_BASE}${endpoint}`, opts);
+  return r.json();
+}
+
+// Shiprocket APIs (per seller)
+app.post('/api/shiprocket/pickup', async (req, res) => {
+  const { return_id, shop, customer_name, customer_email, customer_phone, customer_address, customer_city, customer_state, customer_pincode, product_name, product_sku, quantity, amount, order_id } = req.body;
+  if (!return_id || !shop) return res.status(400).json({ error: 'return_id and shop required' });
+  try {
+    const orderData = await sellerShiprocketAPI(shop, '/orders/create/return', 'POST', {
       order_id: `RETURN-${return_id}`,
       order_date: new Date().toISOString().split('T')[0],
       channel_id: '',
@@ -416,15 +484,9 @@ app.post('/api/shiprocket/pickup', async (req, res) => {
 });
 
 app.get('/api/shiprocket/track/:shipment_id', async (req, res) => {
+  const { shop } = req.query;
   try {
-    const data = await shiprocketAPI(`/courier/track/shipment/${req.params.shipment_id}`, 'GET');
-    res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/shiprocket/couriers', async (req, res) => {
-  try {
-    const data = await shiprocketAPI('/courier/serviceability', 'GET');
+    const data = shop ? await sellerShiprocketAPI(shop, `/courier/track/shipment/${req.params.shipment_id}`, 'GET') : await shiprocketAPI(`/courier/track/shipment/${req.params.shipment_id}`, 'GET');
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

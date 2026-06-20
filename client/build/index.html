@@ -395,6 +395,43 @@ UPI</textarea>
           <button class="topbar-btn" onclick="showAlert('Settings saved!','success')"><i class="fas fa-save"></i> Save Settings</button>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="fas fa-truck" style="color:var(--primary);margin-right:8px"></i>Shiprocket Integration</h3>
+          <span class="badge" id="shiprocketBadge" style="display:none">Connected</span>
+        </div>
+        <div class="card-body">
+          <div id="shiprocketNotConnected">
+            <p style="color:var(--gray-600);font-size:13px;margin-bottom:16px">Connect your Shiprocket account to enable automatic return pickup scheduling. Shipping charges will be deducted from your Shiprocket wallet.</p>
+            <div style="background:var(--warning-light);padding:12px 16px;border-radius:var(--radius);margin-bottom:16px;font-size:13px;color:var(--warning)">
+              <i class="fas fa-info-circle"></i> Don't have a Shiprocket account? <a href="https://app.shiprocket.in/register" target="_blank" style="color:var(--warning);font-weight:600">Create free account</a>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Shiprocket Email</label>
+                <input type="email" id="shipEmail" placeholder="your@email.com">
+              </div>
+              <div class="form-group">
+                <label>Shiprocket Password</label>
+                <input type="password" id="shipPassword" placeholder="Your Shiprocket password">
+              </div>
+            </div>
+            <button class="topbar-btn" onclick="connectShiprocket()"><i class="fas fa-plug"></i> Connect Shiprocket</button>
+          </div>
+          <div id="shiprocketConnected" style="display:none">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+              <div style="width:44px;height:44px;border-radius:var(--radius);background:var(--success-light);color:var(--success);display:flex;align-items:center;justify-content:center;font-size:20px"><i class="fas fa-check-circle"></i></div>
+              <div>
+                <div style="font-weight:600">Shiprocket Connected</div>
+                <div style="font-size:12px;color:var(--gray-500)" id="shipConnectedEmail"></div>
+              </div>
+            </div>
+            <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Return pickups will be booked through your Shiprocket account. Charges will be deducted from your Shiprocket wallet.</p>
+            <button class="topbar-btn secondary" onclick="disconnectShiprocket()" style="color:var(--danger);border-color:var(--danger)"><i class="fas fa-unlink"></i> Disconnect</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -658,6 +695,50 @@ function checkAdmin() {
   }
 }
 
+async function checkShiprocket() {
+  if (!currentShop) return;
+  try {
+    const r = await fetch('/api/shiprocket/status?shop=' + currentShop);
+    const d = await r.json();
+    if (d.connected) {
+      document.getElementById('shiprocketNotConnected').style.display = 'none';
+      document.getElementById('shiprocketConnected').style.display = 'block';
+      document.getElementById('shiprocketBadge').style.display = 'inline-flex';
+      document.getElementById('shiprocketBadge').className = 'badge badge-approved';
+      document.getElementById('shipConnectedEmail').textContent = d.email;
+    } else {
+      document.getElementById('shiprocketNotConnected').style.display = 'block';
+      document.getElementById('shiprocketConnected').style.display = 'none';
+      document.getElementById('shiprocketBadge').style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+async function connectShiprocket() {
+  const email = document.getElementById('shipEmail').value.trim();
+  const password = document.getElementById('shipPassword').value;
+  if (!email || !password) return showAlert('Shiprocket email aur password daalo', 'error');
+  if (!currentShop) return showAlert('Pehle Shopify store connect karo', 'error');
+  const btn = event.currentTarget;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/shiprocket/connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop:currentShop, email, password}) });
+    const d = await r.json();
+    if (d.ok) { showAlert('Shiprocket connected successfully!', 'success'); checkShiprocket(); }
+    else showAlert(d.error || 'Invalid credentials', 'error');
+  } catch(e) { showAlert('Connection failed', 'error'); }
+  btn.innerHTML = '<i class="fas fa-plug"></i> Connect Shiprocket';
+  btn.disabled = false;
+}
+
+async function disconnectShiprocket() {
+  if (!currentShop) return;
+  await fetch('/api/shiprocket/disconnect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({shop:currentShop}) });
+  showAlert('Shiprocket disconnected', 'success');
+  checkShiprocket();
+}
+
 async function loadAllStores() {
   const r = await fetch('/api/shopify/stores');
   const stores = await r.json();
@@ -743,7 +824,7 @@ async function toggleOffer(id, active) {
 const params = new URLSearchParams(window.location.search);
 if (params.get('connected')) showAlert('Shopify store connected successfully!','success');
 checkAdmin();
-loadStores();
+loadStores().then(() => checkShiprocket());
 loadReturns();
 </script>
 </body>
