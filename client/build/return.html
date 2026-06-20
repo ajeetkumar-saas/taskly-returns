@@ -116,7 +116,25 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div class="order-info" id="orderDetails"></div>
         <div id="productList"></div>
         <div class="form-group" style="margin-top:16px">
-          <label>Reason for return</label>
+          <label>What would you like to do?</label>
+          <div style="display:flex;gap:10px;margin-bottom:12px">
+            <div id="optReturn" onclick="selectType('return')" style="flex:1;padding:14px;border:2px solid var(--primary);border-radius:var(--radius);text-align:center;cursor:pointer;background:var(--primary-light)">
+              <i class="fas fa-rotate-left" style="font-size:20px;color:var(--primary);margin-bottom:6px;display:block"></i>
+              <div style="font-weight:600;font-size:14px;color:var(--primary)">Return</div>
+              <div style="font-size:11px;color:var(--gray-500)">Get a refund</div>
+            </div>
+            <div id="optExchange" onclick="selectType('exchange')" style="flex:1;padding:14px;border:2px solid var(--gray-200);border-radius:var(--radius);text-align:center;cursor:pointer">
+              <i class="fas fa-exchange-alt" style="font-size:20px;color:var(--gray-400);margin-bottom:6px;display:block"></i>
+              <div style="font-weight:600;font-size:14px;color:var(--gray-700)">Exchange</div>
+              <div style="font-size:11px;color:var(--gray-500)">Get a different item</div>
+            </div>
+          </div>
+        </div>
+        <div id="exchangeOptions" style="display:none">
+          <div class="form-group"><label>What do you want instead?</label><input type="text" id="exchangeFor" placeholder="e.g. Same product in size L, Blue color"></div>
+        </div>
+        <div class="form-group">
+          <label>Reason</label>
           <select id="returnReason">
             <option value="">Select a reason</option>
             <option value="damaged">Damaged product</option>
@@ -203,6 +221,26 @@ const params = new URLSearchParams(window.location.search);
 const shop = params.get('shop') || '';
 let orderData = null;
 let uploadedImages = [];
+let returnType = 'return';
+
+function selectType(type) {
+  returnType = type;
+  const retEl = document.getElementById('optReturn');
+  const exEl = document.getElementById('optExchange');
+  if (type === 'return') {
+    retEl.style.borderColor = 'var(--primary)'; retEl.style.background = 'var(--primary-light)';
+    retEl.querySelector('i').style.color = 'var(--primary)'; retEl.querySelector('div').style.color = 'var(--primary)';
+    exEl.style.borderColor = 'var(--gray-200)'; exEl.style.background = '';
+    exEl.querySelector('i').style.color = 'var(--gray-400)'; exEl.querySelector('div').style.color = 'var(--gray-700)';
+    document.getElementById('exchangeOptions').style.display = 'none';
+  } else {
+    exEl.style.borderColor = '#A21CAF'; exEl.style.background = '#FDF4FF';
+    exEl.querySelector('i').style.color = '#A21CAF'; exEl.querySelector('div').style.color = '#A21CAF';
+    retEl.style.borderColor = 'var(--gray-200)'; retEl.style.background = '';
+    retEl.querySelector('i').style.color = 'var(--gray-400)'; retEl.querySelector('div').style.color = 'var(--gray-700)';
+    document.getElementById('exchangeOptions').style.display = 'block';
+  }
+}
 let selectedProducts = [];
 
 function showAlert(msg) {
@@ -352,6 +390,8 @@ async function submitReturn() {
     refund_method: document.getElementById('returnRefund').value,
     amount: totalAmount,
     shop_domain: shop,
+    type: returnType,
+    exchange_product: document.getElementById('exchangeFor')?.value || '',
     images: imageUrls
   };
 
