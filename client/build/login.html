@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - GoReturn</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#F0F2F5;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-container{width:100%;max-width:420px;padding:20px}
+.logo-section{text-align:center;margin-bottom:32px}
+.logo{display:inline-flex;align-items:center;gap:10px;font-size:28px;font-weight:800;color:#4F46E5}
+.logo svg{width:36px;height:36px}
+.logo-sub{color:#6B7280;font-size:13px;margin-top:4px}
+.card{background:white;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);padding:36px;border:1px solid #E5E7EB}
+.card h2{font-size:22px;font-weight:700;color:#111827;margin-bottom:4px}
+.card p.subtitle{font-size:14px;color:#6B7280;margin-bottom:28px}
+.form-group{margin-bottom:20px}
+.form-group label{display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px}
+.form-group input{width:100%;padding:12px 14px;border:1.5px solid #D1D5DB;border-radius:10px;font-size:14px;font-family:inherit;transition:all 0.2s;outline:none;background:#FAFAFA}
+.form-group input:focus{border-color:#4F46E5;background:white;box-shadow:0 0 0 3px rgba(79,70,229,0.1)}
+.form-group input::placeholder{color:#9CA3AF}
+.btn{width:100%;padding:13px;background:#4F46E5;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:hover{background:#4338CA;transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,0.3)}
+.btn:active{transform:translateY(0)}
+.btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
+.btn svg{width:18px;height:18px}
+.error-msg{background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;display:none;align-items:center;gap:8px}
+.error-msg svg{width:16px;height:16px;flex-shrink:0}
+.success-msg{background:#F0FDF4;border:1px solid #BBF7D0;color:#16A34A;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;display:none;align-items:center;gap:8px}
+.toggle-mode{text-align:center;margin-top:20px;font-size:13px;color:#6B7280}
+.toggle-mode a{color:#4F46E5;font-weight:600;cursor:pointer;text-decoration:none}
+.toggle-mode a:hover{text-decoration:underline}
+.password-toggle{position:relative}
+.password-toggle input{padding-right:44px}
+.password-toggle button{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#9CA3AF;padding:4px}
+.password-toggle button:hover{color:#4F46E5}
+.divider{display:flex;align-items:center;gap:12px;margin:24px 0}
+.divider span{font-size:12px;color:#9CA3AF;white-space:nowrap}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#E5E7EB}
+.name-field{display:none}
+.footer-links{text-align:center;margin-top:16px}
+.footer-links a{color:#6B7280;font-size:12px;text-decoration:none}
+.footer-links a:hover{color:#4F46E5}
+</style>
+</head>
+<body>
+<div class="login-container">
+  <div class="logo-section">
+    <div class="logo">
+      <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#4F46E5"/><path d="M10 18L15 23L26 12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      GoReturn
+    </div>
+    <div class="logo-sub">Returns & Exchanges Platform</div>
+  </div>
+
+  <div class="card">
+    <h2 id="formTitle">Welcome back</h2>
+    <p class="subtitle" id="formSubtitle">Sign in to your GoReturn dashboard</p>
+
+    <div class="error-msg" id="errorMsg">
+      <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5v4M8 10.5v.5"/></svg>
+      <span id="errorText"></span>
+    </div>
+    <div class="success-msg" id="successMsg">
+      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span id="successText"></span>
+    </div>
+
+    <form id="authForm" onsubmit="handleSubmit(event)">
+      <div class="form-group name-field" id="nameGroup">
+        <label>Full Name</label>
+        <input type="text" id="nameInput" placeholder="Your name">
+      </div>
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="emailInput" placeholder="you@example.com" required>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="password-toggle">
+          <input type="password" id="passwordInput" placeholder="Enter your password" required minlength="6">
+          <button type="button" onclick="togglePassword()">
+            <svg id="eyeIcon" viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 4C4 4 1 10 1 10s3 6 9 6 9-6 9-6-3-6-9-6zm0 10a4 4 0 110-8 4 4 0 010 8zm0-6a2 2 0 100 4 2 2 0 000-4z"/></svg>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn" id="submitBtn">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+        Sign In
+      </button>
+    </form>
+
+    <div class="toggle-mode" id="toggleArea">
+      First time? <a onclick="toggleMode()">Create admin account</a>
+    </div>
+  </div>
+
+  <div class="footer-links">
+    <a href="/">Back to Home</a>
+  </div>
+</div>
+
+<script>
+let isRegister = false;
+const API = window.location.origin;
+
+async function checkExistingSession() {
+  const token = localStorage.getItem('goreturn_token');
+  if (!token) return;
+  try {
+    const r = await fetch(API + '/api/admin/session', { headers: { 'x-auth-token': token } });
+    const d = await r.json();
+    if (d.loggedIn) window.location.href = '/dashboard';
+  } catch(e) {}
+}
+
+async function checkAdminExists() {
+  try {
+    const r = await fetch(API + '/api/admin/session');
+    const d = await r.json();
+    return false;
+  } catch(e) { return false; }
+}
+
+function toggleMode() {
+  isRegister = !isRegister;
+  document.getElementById('formTitle').textContent = isRegister ? 'Create Admin Account' : 'Welcome back';
+  document.getElementById('formSubtitle').textContent = isRegister ? 'Set up your GoReturn admin access' : 'Sign in to your GoReturn dashboard';
+  document.getElementById('nameGroup').style.display = isRegister ? 'block' : 'none';
+  document.getElementById('submitBtn').innerHTML = isRegister
+    ? '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg> Create Account'
+    : '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Sign In';
+  document.getElementById('toggleArea').innerHTML = isRegister
+    ? 'Already have an account? <a onclick="toggleMode()">Sign in</a>'
+    : 'First time? <a onclick="toggleMode()">Create admin account</a>';
+  hideMessages();
+}
+
+function togglePassword() {
+  const inp = document.getElementById('passwordInput');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  document.getElementById('errorText').textContent = msg;
+  el.style.display = 'flex';
+  document.getElementById('successMsg').style.display = 'none';
+}
+
+function showSuccess(msg) {
+  const el = document.getElementById('successMsg');
+  document.getElementById('successText').textContent = msg;
+  el.style.display = 'flex';
+  document.getElementById('errorMsg').style.display = 'none';
+}
+
+function hideMessages() {
+  document.getElementById('errorMsg').style.display = 'none';
+  document.getElementById('successMsg').style.display = 'none';
+}
+
+async function handleSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  hideMessages();
+
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
+  const name = document.getElementById('nameInput').value.trim();
+
+  try {
+    if (isRegister) {
+      const r = await fetch(API + '/api/admin/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      localStorage.setItem('goreturn_token', d.token);
+      localStorage.setItem('goreturn_user', JSON.stringify(d.user));
+      showSuccess('Account created! Redirecting...');
+      setTimeout(() => window.location.href = '/dashboard', 1000);
+    } else {
+      const r = await fetch(API + '/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      localStorage.setItem('goreturn_token', d.token);
+      localStorage.setItem('goreturn_user', JSON.stringify(d.user));
+      showSuccess('Login successful! Redirecting...');
+      setTimeout(() => window.location.href = '/dashboard', 1000);
+    }
+  } catch(err) {
+    showError(err.message);
+  }
+  btn.disabled = false;
+}
+
+checkExistingSession();
+</script>
+</body>
+</html>

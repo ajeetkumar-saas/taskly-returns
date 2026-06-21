@@ -170,9 +170,144 @@ async function initDB() {
       auto_approve_amount NUMERIC(10,2) DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW()
     )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS admin_users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name VARCHAR(255) DEFAULT '',
+      role VARCHAR(50) DEFAULT 'admin',
+      shop_domain VARCHAR(255) DEFAULT '',
+      session_token TEXT DEFAULT '',
+      last_login TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS team_members (
+      id SERIAL PRIMARY KEY,
+      shop_domain VARCHAR(255) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      password_hash TEXT DEFAULT '',
+      role VARCHAR(50) DEFAULT 'viewer',
+      status VARCHAR(20) DEFAULT 'invited',
+      session_token TEXT DEFAULT '',
+      last_login TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(shop_domain, email)
+    )`);
   } catch(e) {}
   console.log('DB ready');
 }
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password + 'goreturn_salt_2026').digest('hex');
+}
+
+async function authenticateRequest(req, res, next) {
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.status(401).json({ error: 'Login required' });
+  const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
+  if (admin.rows.length > 0) { req.user = admin.rows[0]; return next(); }
+  const member = await pool.query('SELECT * FROM team_members WHERE session_token=$1', [token]);
+  if (member.rows.length > 0) { req.user = member.rows[0]; return next(); }
+  return res.status(401).json({ error: 'Invalid session' });
+}
+
+// Admin Registration (first time setup)
+app.post('/api/admin/register', async (req, res) => {
+  const { email, password, name } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  try {
+    const existing = await pool.query('SELECT id FROM admin_users LIMIT 1');
+    if (existing.rows.length > 0) return res.status(403).json({ error: 'Admin already exists. Use login.' });
+    const hash = hashPassword(password);
+    const token = crypto.randomBytes(32).toString('hex');
+    const r = await pool.query(
+      'INSERT INTO admin_users (email, password_hash, name, role, session_token, last_login) VALUES ($1,$2,$3,$4,$5,NOW()) RETURNING id, email, name, role',
+      [email, hash, name || '', 'owner', token]
+    );
+    res.json({ ok: true, user: r.rows[0], token });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin/Team Login
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  const hash = hashPassword(password);
+  const token = crypto.randomBytes(32).toString('hex');
+  const admin = await pool.query('SELECT * FROM admin_users WHERE email=$1 AND password_hash=$2', [email, hash]);
+  if (admin.rows.length > 0) {
+    await pool.query('UPDATE admin_users SET session_token=$1, last_login=NOW() WHERE id=$2', [token, admin.rows[0].id]);
+    return res.json({ ok: true, user: { id: admin.rows[0].id, email: admin.rows[0].email, name: admin.rows[0].name, role: admin.rows[0].role }, token });
+  }
+  const member = await pool.query('SELECT * FROM team_members WHERE email=$1 AND password_hash=$2', [email, hash]);
+  if (member.rows.length > 0) {
+    await pool.query('UPDATE team_members SET session_token=$1, last_login=NOW(), status=$3 WHERE id=$2', [token, member.rows[0].id, 'active']);
+    return res.json({ ok: true, user: { id: member.rows[0].id, email: member.rows[0].email, name: member.rows[0].name, role: member.rows[0].role, shop_domain: member.rows[0].shop_domain }, token });
+  }
+  res.status(401).json({ error: 'Invalid email or password' });
+});
+
+// Check session
+app.get('/api/admin/session', async (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.json({ loggedIn: false });
+  const admin = await pool.query('SELECT id, email, name, role FROM admin_users WHERE session_token=$1', [token]);
+  if (admin.rows.length > 0) return res.json({ loggedIn: true, user: admin.rows[0] });
+  const member = await pool.query('SELECT id, email, name, role, shop_domain FROM team_members WHERE session_token=$1', [token]);
+  if (member.rows.length > 0) return res.json({ loggedIn: true, user: member.rows[0] });
+  res.json({ loggedIn: false });
+});
+
+// Logout
+app.post('/api/admin/logout', async (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (token) {
+    await pool.query('UPDATE admin_users SET session_token=$1 WHERE session_token=$2', ['', token]);
+    await pool.query('UPDATE team_members SET session_token=$1 WHERE session_token=$2', ['', token]);
+  }
+  res.json({ ok: true });
+});
+
+// Team Members CRUD
+app.get('/api/team', authenticateRequest, async (req, res) => {
+  const members = await pool.query('SELECT id, name, email, role, status, last_login, created_at FROM team_members ORDER BY created_at DESC');
+  res.json(members.rows);
+});
+
+app.post('/api/team', authenticateRequest, async (req, res) => {
+  if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can add team members' });
+  const { name, email, password, role, shop_domain } = req.body;
+  if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, password required' });
+  try {
+    const hash = hashPassword(password);
+    const r = await pool.query(
+      'INSERT INTO team_members (shop_domain, name, email, password_hash, role, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, status',
+      [shop_domain || '', name, email, hash, role || 'viewer', 'active']
+    );
+    res.json(r.rows[0]);
+  } catch(e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Member with this email already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/team/:id', authenticateRequest, async (req, res) => {
+  if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can edit members' });
+  const { name, role, password } = req.body;
+  if (name) await pool.query('UPDATE team_members SET name=$1 WHERE id=$2', [name, req.params.id]);
+  if (role) await pool.query('UPDATE team_members SET role=$1 WHERE id=$2', [role, req.params.id]);
+  if (password) await pool.query('UPDATE team_members SET password_hash=$1 WHERE id=$2', [hashPassword(password), req.params.id]);
+  res.json({ ok: true });
+});
+
+app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
+  if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove members' });
+  await pool.query('DELETE FROM team_members WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
 
 // OAuth
 app.get('/api/auth/shopify', (req, res) => {
@@ -1130,6 +1265,19 @@ app.delete('/api/locations/:id', async (req, res) => {
 app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL }));
 
 app.use(express.static(path.join(__dirname, '../client/build')));
+
+app.get('/', (req, res) => {
+  const shop = req.query.shop;
+  if (shop) {
+    return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  }
+  res.sendFile(path.join(__dirname, '../client/build/landing.html'));
+});
+
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, '../client/build/login.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
+app.get('/return', (req, res) => res.sendFile(path.join(__dirname, '../client/build/return.html')));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '../client/build/privacy.html')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 
 const PORT = process.env.PORT || 3001;

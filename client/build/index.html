@@ -134,11 +134,16 @@ tbody tr:hover{background:var(--gray-50)}
     <div class="nav-item" onclick="showPage('automation')"><i class="fas fa-robot"></i> Automation <span class="nav-new">New</span></div>
     <div class="nav-item" onclick="showPage('promotions')"><i class="fas fa-gift"></i> Promotions <span class="nav-new">New</span></div>
     <div class="nav-item" onclick="showPage('webhooks')"><i class="fas fa-code"></i> Webhooks</div>
+    <div class="nav-item" onclick="showPage('team')"><i class="fas fa-users"></i> Team</div>
     <div class="nav-item" onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</div>
     <div class="nav-item" onclick="showPage('help')"><i class="fas fa-question-circle"></i> Help Center</div>
     <div class="nav-item" onclick="showPage('admin')" id="adminNav" style="display:none"><i class="fas fa-shield-halved"></i> Admin</div>
   </nav>
-  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:10px;color:var(--gray-500)">GoReturn v3.0</div>
+  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.1)">
+    <div id="loggedInUser" style="font-size:11px;color:#A5B4FC;margin-bottom:6px;display:none"></div>
+    <button onclick="handleLogout()" style="width:100%;padding:8px;background:rgba(255,255,255,0.1);color:#E5E7EB;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;justify-content:center"><i class="fas fa-sign-out-alt"></i> Logout</button>
+    <div style="font-size:10px;color:var(--gray-500);margin-top:6px">GoReturn v3.0</div>
+  </div>
 </div>
 
 <div class="main">
@@ -621,6 +626,19 @@ UPI</textarea></div>
       </div></div>
     </div>
 
+    <!-- Team Page -->
+    <div class="page" id="page-team">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-users" style="color:var(--primary);margin-right:8px"></i>Team Members</h3><button class="btn btn-primary" onclick="showTeamModal()"><i class="fas fa-plus"></i> Add Member</button></div>
+      <div class="card-body" style="padding:0"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody id="teamTb"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
+      <div class="card"><div class="card-hdr"><h3>Roles & Permissions</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <div style="padding:16px;border:2px solid var(--primary);border-radius:12px;background:var(--primary-light)"><div style="font-weight:700;color:var(--primary);font-size:14px"><i class="fas fa-crown"></i> Owner</div><div style="font-size:12px;color:var(--gray-500);margin-top:4px">Full access. Can manage team, billing, all settings.</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:12px"><div style="font-weight:700;color:#059669;font-size:14px"><i class="fas fa-user-shield"></i> Admin</div><div style="font-size:12px;color:var(--gray-500);margin-top:4px">Manage returns, settings, team. No billing access.</div></div>
+          <div style="padding:16px;border:1px solid var(--gray-200);border-radius:12px"><div style="font-weight:700;color:#D97706;font-size:14px"><i class="fas fa-eye"></i> Viewer</div><div style="font-size:12px;color:var(--gray-500);margin-top:4px">View-only access. Can see returns and analytics.</div></div>
+        </div>
+      </div></div>
+    </div>
+
     <!-- Admin Page -->
     <div class="page" id="page-admin">
       <div class="card"><div class="card-hdr"><h3>All Merchants</h3><button class="btn btn-secondary" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i></button></div><div class="card-body" style="padding:0"><table><thead><tr><th>Store</th><th>Domain</th><th>Plan</th><th>Connected</th><th>Action</th></tr></thead><tbody id="adminTb"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></div>
@@ -645,7 +663,7 @@ let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
 let analyticsData=null,curATab='requests';
 
-function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='fraud')loadFraud();if(p==='pincode-risk')loadPincodeRisk();if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
+function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin',team:'Team Members'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='fraud')loadFraud();if(p==='pincode-risk')loadPincodeRisk();if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='team')loadTeam();if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
 function showAlert(m,t){const e=document.getElementById('alertBox');e.innerHTML=`<div class="alert alert-${t}"><i class="fas fa-${t==='success'?'check-circle':'exclamation-circle'}"></i>${m}</div>`;setTimeout(()=>e.innerHTML='',4000);}
 
 async function loadStores(){const r=await fetch('/api/shopify/stores');const s=await r.json();const el=document.getElementById('connectedStores');if(s.length){currentShop=s[0].shop_domain;currentPlan=s[0].plan||'free';el.innerHTML=s.map(x=>`<div class="connected-store"><i class="fas fa-check-circle"></i>${x.store_name||x.shop_domain}</div>`).join('');document.getElementById('storeStatus').style.display='flex';document.getElementById('storeName').textContent=(s[0].store_name||s[0].shop_domain)+' · '+currentPlan.toUpperCase();document.getElementById('portalLink').href=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalLink').textContent=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalPreview').href=location.origin+'/return.html?shop='+currentShop;applyPlanLocks();}else{el.innerHTML='<p style="color:var(--gray-400);font-size:12px">No stores connected</p>';}}
@@ -820,8 +838,90 @@ function obBack(){if(obStep<=1)return;obStep--;showObStep();}
 function showObStep(){for(let i=1;i<=4;i++){document.getElementById('obContent'+i).style.display=i===obStep?'block':'none';const s=document.getElementById('obStep'+i);s.classList.remove('active','done');if(i<obStep)s.classList.add('done');if(i===obStep)s.classList.add('active');if(i<4){const l=document.getElementById('obLine'+i);l.classList.toggle('done',i<obStep);}}document.getElementById('obBackBtn').style.display=obStep>1?'inline-flex':'none';document.getElementById('obNextBtn').innerHTML=obStep===4?'Go to Dashboard <i class="fas fa-check"></i>':obStep===3?'Connect & Next <i class="fas fa-arrow-right"></i>':'Next <i class="fas fa-arrow-right"></i>';document.getElementById('obSkipBtn').style.display=obStep===4?'none':'inline-flex';}
 function skipOnboarding(){document.getElementById('onboarding').style.display='none';localStorage.setItem('ob_done_'+currentShop,'true');}
 
+// Auth check
+function getAuthToken(){return localStorage.getItem('goreturn_token');}
+function getAuthHeaders(){const t=getAuthToken();return t?{'x-auth-token':t}:{};}
+
+function checkDashboardAuth(){
+  const token=getAuthToken();
+  const shop=new URLSearchParams(location.search).get('shop');
+  if(shop)return; // Shopify embedded mode
+  if(!token){window.location.href='/login';return;}
+  fetch('/api/admin/session',{headers:{'x-auth-token':token}}).then(r=>r.json()).then(d=>{
+    if(!d.loggedIn){localStorage.removeItem('goreturn_token');localStorage.removeItem('goreturn_user');window.location.href='/login';}
+    else{const u=document.getElementById('loggedInUser');u.style.display='block';u.innerHTML='<i class="fas fa-user-circle"></i> '+d.user.name+'<br><span style="color:#818CF8;font-size:10px">'+d.user.role.toUpperCase()+'</span>';}
+  }).catch(()=>{});
+}
+
+function handleLogout(){
+  const token=getAuthToken();
+  if(token)fetch('/api/admin/logout',{method:'POST',headers:{'x-auth-token':token}});
+  localStorage.removeItem('goreturn_token');localStorage.removeItem('goreturn_user');
+  window.location.href='/login';
+}
+
+// Team functions
+async function loadTeam(){
+  const token=getAuthToken();if(!token)return;
+  try{
+    const r=await fetch('/api/team',{headers:{'x-auth-token':token}});
+    const members=await r.json();
+    const tb=document.getElementById('teamTb');
+    if(!members.length){tb.innerHTML='<tr><td colspan="6" class="empty">No team members yet. Click "Add Member" to invite.</td></tr>';return;}
+    tb.innerHTML=members.map(m=>`<tr>
+      <td><strong>${m.name}</strong></td>
+      <td>${m.email}</td>
+      <td><span class="badge badge-${m.role==='admin'?'success':'warning'}">${m.role}</span></td>
+      <td><span class="badge badge-${m.status==='active'?'success':'info'}">${m.status}</span></td>
+      <td>${m.last_login?new Date(m.last_login).toLocaleDateString():'Never'}</td>
+      <td><button class="btn btn-sm" onclick="deleteTeamMember(${m.id})" style="color:#DC2626;font-size:12px"><i class="fas fa-trash"></i></button></td>
+    </tr>`).join('');
+  }catch(e){console.log('Team load error:',e);}
+}
+
+function showTeamModal(){
+  const html=`<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999" id="teamModal" onclick="if(event.target===this)this.remove()">
+    <div style="background:white;border-radius:16px;padding:28px;width:440px;max-width:90vw">
+      <h3 style="font-size:18px;font-weight:700;margin-bottom:20px"><i class="fas fa-user-plus" style="color:#4F46E5;margin-right:8px"></i>Add Team Member</h3>
+      <div class="fg" style="margin-bottom:14px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Full Name</label><input type="text" id="tmName" placeholder="Team member name" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"></div>
+      <div class="fg" style="margin-bottom:14px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Email</label><input type="email" id="tmEmail" placeholder="email@example.com" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"></div>
+      <div class="fg" style="margin-bottom:14px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Password</label><input type="text" id="tmPass" placeholder="Set login password" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"></div>
+      <div class="fg" style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Role</label><select id="tmRole" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"><option value="viewer">Viewer (View Only)</option><option value="admin">Admin (Manage Returns & Settings)</option></select></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="document.getElementById('teamModal').remove()" style="padding:10px 20px;border:1px solid #D1D5DB;border-radius:8px;background:white;cursor:pointer;font-size:14px;font-family:inherit">Cancel</button>
+        <button onclick="addTeamMember()" style="padding:10px 20px;background:#4F46E5;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit"><i class="fas fa-plus"></i> Add Member</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+async function addTeamMember(){
+  const name=document.getElementById('tmName').value.trim();
+  const email=document.getElementById('tmEmail').value.trim();
+  const password=document.getElementById('tmPass').value;
+  const role=document.getElementById('tmRole').value;
+  if(!name||!email||!password){showAlert('All fields are required','error');return;}
+  try{
+    const r=await fetch('/api/team',{method:'POST',headers:{'Content-Type':'application/json',...getAuthHeaders()},body:JSON.stringify({name,email,password,role,shop_domain:currentShop})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error);
+    document.getElementById('teamModal').remove();
+    showAlert('Team member added! They can login at /login','success');
+    loadTeam();
+  }catch(e){showAlert(e.message,'error');}
+}
+
+async function deleteTeamMember(id){
+  if(!confirm('Remove this team member?'))return;
+  await fetch('/api/team/'+id,{method:'DELETE',headers:getAuthHeaders()});
+  showAlert('Member removed','success');
+  loadTeam();
+}
+
 const params=new URLSearchParams(location.search);
 if(params.get('connected'))showAlert('Store connected!','success');
+checkDashboardAuth();
 checkAdmin();
 loadStores().then(()=>{checkShiprocket();checkOnboarding();});
 loadReturns().then(()=>renderDashCharts());
