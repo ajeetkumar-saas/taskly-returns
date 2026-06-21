@@ -641,8 +641,41 @@ UPI</textarea></div>
 
     <!-- Admin Page -->
     <div class="page" id="page-admin">
-      <div class="card"><div class="card-hdr"><h3>All Merchants</h3><button class="btn btn-secondary" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i></button></div><div class="card-body" style="padding:0"><table><thead><tr><th>Store</th><th>Domain</th><th>Plan</th><th>Connected</th><th>Action</th></tr></thead><tbody id="adminTb"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></div>
-      <div class="card"><div class="card-hdr"><h3>Give Free Access</h3></div><div class="card-body"><div class="fr"><div class="fg"><label>Store Domain</label><input type="text" id="freeStore" placeholder="store.myshopify.com"></div><div class="fg"><label>Plan</label><select id="freePlan"><option value="free">Free</option><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option></select></div></div><button class="btn btn-primary" onclick="giveFreePlan()"><i class="fas fa-gift"></i> Give Access</button></div></div>
+      <!-- Admin Tabs -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="showAdminTab('stores')" id="admTab-stores"><i class="fas fa-store"></i> All Stores</button>
+        <button class="btn btn-secondary" onclick="showAdminTab('storedata')" id="admTab-storedata"><i class="fas fa-chart-bar"></i> Store Data</button>
+        <button class="btn btn-secondary" onclick="showAdminTab('activity')" id="admTab-activity"><i class="fas fa-history"></i> Activity Log</button>
+        <button class="btn btn-secondary" onclick="showAdminTab('access')" id="admTab-access"><i class="fas fa-gift"></i> Give Access</button>
+      </div>
+      <!-- Stores Tab -->
+      <div id="admPanel-stores">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-store" style="color:var(--primary);margin-right:8px"></i>All Merchants</h3><button class="btn btn-secondary" onclick="loadAllStores()"><i class="fas fa-sync-alt"></i> Refresh</button></div><div class="card-body" style="padding:0"><table><thead><tr><th>Store</th><th>Domain</th><th>Plan</th><th>Returns</th><th>Connected</th><th>Action</th></tr></thead><tbody id="adminTb"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
+      </div>
+      <!-- Store Data Tab -->
+      <div id="admPanel-storedata" style="display:none">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-chart-bar" style="color:var(--primary);margin-right:8px"></i>Store-wise Data</h3>
+          <select id="storeDataFilter" onchange="loadStoreData()" style="padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px"><option value="all">All Stores</option></select>
+        </div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="storeDataStats">
+            <div style="text-align:center;padding:16px;background:var(--primary-light);border-radius:12px"><div style="font-size:24px;font-weight:700;color:var(--primary)" id="sdTotal">0</div><div style="font-size:11px;color:var(--gray-500)">Total Returns</div></div>
+            <div style="text-align:center;padding:16px;background:#FEF3C7;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#D97706" id="sdPending">0</div><div style="font-size:11px;color:var(--gray-500)">Pending</div></div>
+            <div style="text-align:center;padding:16px;background:#D1FAE5;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#059669" id="sdApproved">0</div><div style="font-size:11px;color:var(--gray-500)">Approved</div></div>
+            <div style="text-align:center;padding:16px;background:#DBEAFE;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#2563EB" id="sdRefunded">0</div><div style="font-size:11px;color:var(--gray-500)">Refunded</div></div>
+          </div>
+          <table><thead><tr><th>Store</th><th>Order</th><th>Customer</th><th>Product</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody id="storeDataTb"><tr><td colspan="7" class="empty">Select a store or view all</td></tr></tbody></table>
+        </div></div>
+      </div>
+      <!-- Activity Log Tab -->
+      <div id="admPanel-activity" style="display:none">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-history" style="color:var(--primary);margin-right:8px"></i>Activity Log</h3><button class="btn btn-secondary" onclick="loadActivityLog()"><i class="fas fa-sync-alt"></i> Refresh</button></div>
+        <div class="card-body" style="padding:0"><table><thead><tr><th>User</th><th>Role</th><th>Action</th><th>Details</th><th>IP</th><th>Time</th></tr></thead><tbody id="activityTb"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
+      </div>
+      <!-- Give Access Tab -->
+      <div id="admPanel-access" style="display:none">
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-gift" style="color:var(--primary);margin-right:8px"></i>Give Free Access</h3></div><div class="card-body"><div class="fr"><div class="fg"><label>Store Domain</label><input type="text" id="freeStore" placeholder="store.myshopify.com"></div><div class="fg"><label>Plan</label><select id="freePlan"><option value="free">Free</option><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option></select></div></div><button class="btn btn-primary" onclick="giveFreePlan()"><i class="fas fa-gift"></i> Give Access</button></div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -747,10 +780,79 @@ async function connectShiprocket(){const e=document.getElementById('shipEmail').
 async function disconnectShiprocket(){await fetch('/api/shiprocket/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop})});showAlert('Disconnected','success');checkShiprocket();}
 
 // Admin
-const AK='taskly2026admin';
+const AK='goreturn2026admin';
+let allStoresList=[];
 function checkAdmin(){const p=new URLSearchParams(location.search);if(p.get('admin')===AK)localStorage.setItem('isAdmin','true');if(localStorage.getItem('isAdmin')==='true')document.getElementById('adminNav').style.display='flex';}
-async function loadAllStores(){const r=await fetch('/api/shopify/stores');const s=await r.json();const tb=document.getElementById('adminTb');if(!s.length){tb.innerHTML='<tr><td colspan="5" class="empty">No merchants</td></tr>';return;}
-tb.innerHTML=s.map(x=>`<tr><td><strong>${x.store_name||'-'}</strong></td><td style="font-size:11px">${x.shop_domain}</td><td><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span></td><td style="font-size:11px">${fmtDate(x.created_at)}</td><td><select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select></td></tr>`).join('');}
+
+function showAdminTab(tab){
+  ['stores','storedata','activity','access'].forEach(t=>{
+    document.getElementById('admPanel-'+t).style.display=t===tab?'block':'none';
+    document.getElementById('admTab-'+t).className=t===tab?'btn btn-primary':'btn btn-secondary';
+  });
+  if(tab==='stores')loadAllStores();
+  if(tab==='storedata')loadStoreData();
+  if(tab==='activity')loadActivityLog();
+}
+
+async function loadAllStores(){
+  const r=await fetch('/api/shopify/stores');const s=await r.json();allStoresList=s;
+  const tb=document.getElementById('adminTb');
+  if(!s.length){tb.innerHTML='<tr><td colspan="6" class="empty">No merchants yet</td></tr>';return;}
+  // Populate store filter dropdown
+  const sel=document.getElementById('storeDataFilter');
+  sel.innerHTML='<option value="all">All Stores ('+s.length+')</option>'+s.map(x=>'<option value="'+x.shop_domain+'">'+(x.store_name||x.shop_domain)+'</option>').join('');
+  // Count returns per store
+  const retR=await fetch('/api/returns?shop=all');const rets=await retR.json();
+  const retCounts={};(Array.isArray(rets)?rets:[]).forEach(r=>{retCounts[r.shop_domain]=(retCounts[r.shop_domain]||0)+1;});
+  tb.innerHTML=s.map(x=>`<tr>
+    <td><strong>${x.store_name||'-'}</strong></td>
+    <td style="font-size:11px">${x.shop_domain}</td>
+    <td><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span></td>
+    <td><strong>${retCounts[x.shop_domain]||0}</strong></td>
+    <td style="font-size:11px">${fmtDate(x.created_at)}</td>
+    <td><select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select></td>
+  </tr>`).join('');
+}
+
+async function loadStoreData(){
+  const shop=document.getElementById('storeDataFilter').value;
+  const url=shop==='all'?'/api/returns?shop=all':'/api/returns?shop='+shop;
+  try{
+    const r=await fetch(url);const rets=await r.json();const data=Array.isArray(rets)?rets:[];
+    document.getElementById('sdTotal').textContent=data.length;
+    document.getElementById('sdPending').textContent=data.filter(x=>x.status==='pending').length;
+    document.getElementById('sdApproved').textContent=data.filter(x=>x.status==='approved').length;
+    document.getElementById('sdRefunded').textContent=data.filter(x=>x.status==='refunded').length;
+    const tb=document.getElementById('storeDataTb');
+    if(!data.length){tb.innerHTML='<tr><td colspan="7" class="empty">No returns data</td></tr>';return;}
+    tb.innerHTML=data.slice(0,100).map(x=>`<tr>
+      <td style="font-size:11px">${x.shop_domain||'-'}</td>
+      <td>#${x.order_id}</td>
+      <td>${x.customer_name}</td>
+      <td style="font-size:11px">${(x.product_name||'').substring(0,30)}</td>
+      <td>₹${x.amount||0}</td>
+      <td><span class="badge badge-${x.status}">${x.status}</span></td>
+      <td style="font-size:11px">${fmtDate(x.created_at)}</td>
+    </tr>`).join('');
+  }catch(e){console.log('Store data error:',e);}
+}
+
+async function loadActivityLog(){
+  try{
+    const r=await fetch('/api/activity-log',{headers:getAuthHeaders()});const logs=await r.json();
+    const tb=document.getElementById('activityTb');
+    if(!logs.length){tb.innerHTML='<tr><td colspan="6" class="empty">No activity yet</td></tr>';return;}
+    tb.innerHTML=logs.map(x=>`<tr>
+      <td><strong>${x.user_name||'System'}</strong><br><span style="font-size:10px;color:var(--gray-400)">${x.user_email}</span></td>
+      <td><span class="badge badge-${x.user_role==='owner'?'approved':x.user_role==='admin'?'processed':'pending'}">${x.user_role||'-'}</span></td>
+      <td>${x.action}</td>
+      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${x.details||'-'}</td>
+      <td style="font-size:10px;color:var(--gray-400)">${x.ip_address||'-'}</td>
+      <td style="font-size:11px">${new Date(x.created_at).toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+  }catch(e){console.log('Activity log error:',e);}
+}
+
 async function changePlan(shop,plan){await fetch('/api/admin/change-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Plan changed to ${plan}`,'success');}
 async function giveFreePlan(){const shop=document.getElementById('freeStore').value.trim(),plan=document.getElementById('freePlan').value;if(!shop)return showAlert('Enter domain','error');await fetch('/api/admin/free-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Free access given!`,'success');}
 

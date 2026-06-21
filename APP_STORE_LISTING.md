@@ -1,7 +1,7 @@
-# Shopify App Store Listing — Taskly Returns
+# Shopify App Store Listing — GoReturn
 
 ## App Name
-Taskly Returns — COD Returns Manager
+GoReturn — COD Returns Manager
 
 ## Tagline (70 chars max)
 Automate COD returns, exchanges & refunds for Indian D2C brands
@@ -15,7 +15,7 @@ Reduce RTO by 40%. Self-service return portal, auto-refunds, WhatsApp alerts. Bu
 
 Indian D2C brands lose crores every year to COD returns. 39% of COD orders come back — costing you shipping both ways plus lost revenue.
 
-**Taskly Returns** automates your entire return process — from customer request to refund — saving you 10+ hours per week.
+**GoReturn** automates your entire return process — from customer request to refund — saving you 10+ hours per week.
 
 ### What you get:
 
@@ -65,10 +65,10 @@ Orders and shipping > Returns and exchanges
 returns, COD, RTO, refund, exchange, return management, COD returns, D2C, India, return portal, Shiprocket, WhatsApp, reverse logistics
 
 ## App URL
-https://taskly-returns-production.up.railway.app
+https://goreturn.pro
 
 ## Privacy Policy URL
-https://taskly-returns-production.up.railway.app/privacy.html
+https://goreturn.pro/privacy
 
 ## Support Email
 ajeetkumar.saas@gmail.com

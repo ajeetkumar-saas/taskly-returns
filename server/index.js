@@ -405,6 +405,7 @@ app.post('/api/team', authenticateRequest, async (req, res) => {
       'INSERT INTO team_members (shop_domain, name, email, password_hash, role, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, status',
       [shop_domain || '', name, email, hash, role || 'viewer', 'active']
     );
+    await logActivity(req, 'Team Member Added', `${name} (${email}) as ${role}`);
     res.json(r.rows[0]);
   } catch(e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Member with this email already exists' });
@@ -423,7 +424,9 @@ app.patch('/api/team/:id', authenticateRequest, async (req, res) => {
 
 app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
   if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove members' });
+  const m = await pool.query('SELECT name, email FROM team_members WHERE id=$1', [req.params.id]);
   await pool.query('DELETE FROM team_members WHERE id=$1', [req.params.id]);
+  await logActivity(req, 'Team Member Removed', `${m.rows[0]?.name} (${m.rows[0]?.email})`);
   res.json({ ok: true });
 });
 
@@ -641,7 +644,7 @@ app.get('/api/returns', async (req, res) => {
   const params = [];
   const conditions = [];
   let idx = 1;
-  if (shop) { conditions.push(`shop_domain=$${idx++}`); params.push(shop); }
+  if (shop && shop !== 'all') { conditions.push(`shop_domain=$${idx++}`); params.push(shop); }
   if (status) { conditions.push(`status=$${idx++}`); params.push(status); }
   if (type) { conditions.push(`type=$${idx++}`); params.push(type); }
   if (date_from) { conditions.push(`created_at >= $${idx++}`); params.push(date_from); }
@@ -920,6 +923,8 @@ app.patch('/api/returns/:id', async (req, res) => {
   const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idx} RETURNING *`, values);
   const ret = r.rows[0];
   if (status && ret.customer_email) sendEmail(ret.customer_email, `Return ${status.toUpperCase()} - ${ret.order_number||ret.order_id}`, returnStatusEmail(ret.customer_name||'Customer', ret.order_number||ret.order_id, status, ret.amount));
+  if (status) logActivity(req, 'Return Status Changed', `#${req.params.id} → ${status} (${ret.customer_name}, ${ret.order_id})`);
+  if (archived) logActivity(req, 'Return Archived', `#${req.params.id} (${ret.customer_name})`);
   res.json(ret);
 });
 
@@ -1046,7 +1051,7 @@ app.get('/api/shiprocket/track/:shipment_id', async (req, res) => {
 });
 
 // Admin APIs
-const ADMIN_KEY = process.env.ADMIN_KEY || 'taskly2026admin';
+const ADMIN_KEY = process.env.ADMIN_KEY || 'goreturn2026admin';
 
 function checkAdmin(req, res) {
   const key = req.body?.admin_key || req.query?.admin_key;
@@ -1058,6 +1063,7 @@ app.post('/api/admin/change-plan', async (req, res) => {
   if (!checkAdmin(req, res)) return;
   const { shop, plan } = req.body;
   await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan, shop]);
+  await logActivity(req, 'Plan Changed', `${shop} → ${plan}`);
   res.json({ ok: true });
 });
 
@@ -1378,6 +1384,14 @@ app.post('/api/locations', async (req, res) => {
 app.delete('/api/locations/:id', async (req, res) => {
   await pool.query('DELETE FROM locations WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
+});
+
+// Activity Log API
+app.get('/api/activity-log', authenticateRequest, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 200');
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL }));
