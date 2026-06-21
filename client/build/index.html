@@ -93,6 +93,15 @@ tbody tr:hover{background:var(--gray-50)}
 .tab-item{padding:8px 16px;font-size:12px;font-weight:500;color:var(--gray-500);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
 .tab-item:hover{color:var(--gray-800)}
 .tab-item.active{color:var(--primary);border-bottom-color:var(--primary)}
+.ob-step{display:flex;flex-direction:column;align-items:center;position:relative;min-width:80px}
+.ob-dot{width:32px;height:32px;border-radius:50%;background:var(--gray-200);color:var(--gray-400);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.ob-step.active .ob-dot{background:var(--primary);color:white}
+.ob-step.done .ob-dot{background:var(--success);color:white}
+.ob-text{font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center}
+.ob-step.active .ob-text{color:var(--primary);font-weight:600}
+.ob-step.done .ob-text{color:var(--success)}
+.ob-line{width:60px;height:2px;background:var(--gray-200);margin-top:16px}
+.ob-line.done{background:var(--success)}
 @media(max-width:768px){.sidebar{display:none}.main{margin-left:0}.stats-grid{grid-template-columns:repeat(2,1fr)}.fr{grid-template-columns:1fr}.topbar{flex-wrap:wrap;gap:8px}.topbar h2{font-size:14px}.topbar-right{width:100%;justify-content:flex-end}.btn{padding:6px 10px;font-size:11px}.card-hdr{flex-wrap:wrap;gap:8px}.filter-bar{overflow-x:auto}table{display:block;overflow-x:auto;white-space:nowrap}.chart-container{height:200px!important}}
 </style>
 </head>
@@ -147,6 +156,71 @@ tbody tr:hover{background:var(--gray-50)}
 
   <div class="content">
     <div id="alertBox"></div>
+
+    <!-- Onboarding Wizard -->
+    <div id="onboarding" style="display:none">
+      <div class="card" style="border:2px solid var(--primary)">
+        <div class="card-hdr" style="background:var(--primary);color:white"><h3 style="color:white"><i class="fas fa-rocket" style="margin-right:8px"></i>Welcome to GoReturn! Let's get you started</h3></div>
+        <div class="card-body">
+          <div style="display:flex;justify-content:center;gap:0;margin-bottom:24px">
+            <div class="ob-step active" id="obStep1"><div class="ob-dot">1</div><div class="ob-text">Set Policy</div></div>
+            <div class="ob-line" id="obLine1"></div>
+            <div class="ob-step" id="obStep2"><div class="ob-dot">2</div><div class="ob-text">Create Reasons</div></div>
+            <div class="ob-line" id="obLine2"></div>
+            <div class="ob-step" id="obStep3"><div class="ob-dot">3</div><div class="ob-text">Connect Logistics</div></div>
+            <div class="ob-line" id="obLine3"></div>
+            <div class="ob-step" id="obStep4"><div class="ob-dot">4</div><div class="ob-text">Go Live!</div></div>
+          </div>
+
+          <div id="obContent1">
+            <h3 style="font-size:16px;margin-bottom:8px">Step 1: Set your return & exchange policy</h3>
+            <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Define how many days customers have to return or exchange products.</p>
+            <div class="fr"><div class="fg"><label>Return Window (days)</label><input type="number" id="obReturnWindow" value="14"></div><div class="fg"><label>Exchange Window (days)</label><input type="number" id="obExchangeWindow" value="14"></div></div>
+            <div class="fr"><div class="fg"><label>Auto-approve returns under (₹)</label><input type="number" id="obAutoApprove" value="0" placeholder="0 = disabled"></div><div class="fg"></div></div>
+          </div>
+
+          <div id="obContent2" style="display:none">
+            <h3 style="font-size:16px;margin-bottom:8px">Step 2: Set return & exchange reasons</h3>
+            <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Customize the reasons customers can select when requesting a return.</p>
+            <div class="fg"><label>Return Reasons (one per line)</label><textarea id="obReasons" rows="5">Damaged Product
+Wrong Item Received
+Size/Fit Issue
+Quality Not As Expected
+Not As Described
+Changed My Mind</textarea></div>
+            <div class="fg"><label>Refund Methods (one per line)</label><textarea id="obRefunds" rows="3">Original Payment Method
+Bank Transfer
+Store Credit
+UPI</textarea></div>
+          </div>
+
+          <div id="obContent3" style="display:none">
+            <h3 style="font-size:16px;margin-bottom:8px">Step 3: Connect your logistics partner</h3>
+            <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Connect Shiprocket to automate return pickups. You can skip this and do it later.</p>
+            <div style="background:var(--warning-light);padding:10px 14px;border-radius:var(--radius);margin-bottom:12px;font-size:12px;color:var(--warning)"><i class="fas fa-info-circle"></i> No account? <a href="https://app.shiprocket.in/register" target="_blank" style="color:var(--warning);font-weight:600">Create free Shiprocket account</a></div>
+            <div class="fr"><div class="fg"><label>Shiprocket Email</label><input type="email" id="obShipEmail" placeholder="email"></div><div class="fg"><label>Password</label><input type="password" id="obShipPass" placeholder="password"></div></div>
+          </div>
+
+          <div id="obContent4" style="display:none">
+            <div style="text-align:center;padding:20px">
+              <div style="width:64px;height:64px;border-radius:50%;background:var(--success-light);color:var(--success);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px"><i class="fas fa-check"></i></div>
+              <h3 style="font-size:18px;margin-bottom:8px">You're all set! 🎉</h3>
+              <p style="color:var(--gray-500);font-size:13px;margin-bottom:8px">Your return portal is ready. Share this link with your customers:</p>
+              <div class="customer-link" style="justify-content:center;margin-bottom:16px"><i class="fas fa-external-link-alt"></i><a id="obPortalLink" href="#" target="_blank"></a></div>
+              <p style="color:var(--gray-400);font-size:12px">You can customize everything from Settings anytime.</p>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-200)">
+            <button class="btn btn-secondary" id="obSkipBtn" onclick="skipOnboarding()"><i class="fas fa-forward"></i> Skip Setup</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary" id="obBackBtn" onclick="obBack()" style="display:none"><i class="fas fa-arrow-left"></i> Back</button>
+              <button class="btn btn-primary" id="obNextBtn" onclick="obNext()">Next <i class="fas fa-arrow-right"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
@@ -642,10 +716,18 @@ function fmtReason(r){return{damaged:'Damaged',wrong_item:'Wrong Item',size_issu
 function fmtRefund(r){return{original:'Original',bank_transfer:'Bank Transfer',store_credit:'Store Credit',upi:'UPI',cod:'COD'}[r]||r||'-';}
 function fmtDate(d){if(!d)return'-';return new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
 
+// Onboarding
+let obStep=1;
+function checkOnboarding(){if(localStorage.getItem('ob_done_'+currentShop))return;document.getElementById('onboarding').style.display='block';document.getElementById('obPortalLink').href=location.origin+'/return.html?shop='+currentShop;document.getElementById('obPortalLink').textContent=location.origin+'/return.html?shop='+currentShop;}
+function obNext(){if(obStep===3){const e=document.getElementById('obShipEmail').value,p=document.getElementById('obShipPass').value;if(e&&p){fetch('/api/shiprocket/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,email:e,password:p})}).then(r=>r.json()).then(d=>{if(d.ok)showAlert('Shiprocket connected!','success');});}}if(obStep===1){const data={shop:currentShop,return_window:document.getElementById('obReturnWindow').value,exchange_window:document.getElementById('obExchangeWindow').value,auto_approve_under:document.getElementById('obAutoApprove').value,return_reasons:document.getElementById('obReasons')?.value||'',refund_methods:document.getElementById('obRefunds')?.value||''};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}if(obStep===2){const data={shop:currentShop,return_reasons:document.getElementById('obReasons').value,refund_methods:document.getElementById('obRefunds').value};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}if(obStep>=4){skipOnboarding();return;}obStep++;showObStep();}
+function obBack(){if(obStep<=1)return;obStep--;showObStep();}
+function showObStep(){for(let i=1;i<=4;i++){document.getElementById('obContent'+i).style.display=i===obStep?'block':'none';const s=document.getElementById('obStep'+i);s.classList.remove('active','done');if(i<obStep)s.classList.add('done');if(i===obStep)s.classList.add('active');if(i<4){const l=document.getElementById('obLine'+i);l.classList.toggle('done',i<obStep);}}document.getElementById('obBackBtn').style.display=obStep>1?'inline-flex':'none';document.getElementById('obNextBtn').innerHTML=obStep===4?'Go to Dashboard <i class="fas fa-check"></i>':obStep===3?'Connect & Next <i class="fas fa-arrow-right"></i>':'Next <i class="fas fa-arrow-right"></i>';document.getElementById('obSkipBtn').style.display=obStep===4?'none':'inline-flex';}
+function skipOnboarding(){document.getElementById('onboarding').style.display='none';localStorage.setItem('ob_done_'+currentShop,'true');}
+
 const params=new URLSearchParams(location.search);
 if(params.get('connected'))showAlert('Store connected!','success');
 checkAdmin();
-loadStores().then(()=>{checkShiprocket();});
+loadStores().then(()=>{checkShiprocket();checkOnboarding();});
 loadReturns().then(()=>renderDashCharts());
 </script>
 </body>
