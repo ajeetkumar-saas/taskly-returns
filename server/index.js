@@ -306,6 +306,40 @@ app.post('/api/admin/resend-otp', async (req, res) => {
   res.json({ ok: true, message: 'New OTP sent to ' + email });
 });
 
+// Forgot Password — send reset OTP
+app.post('/api/admin/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  const admin = await pool.query('SELECT id, name FROM admin_users WHERE email=$1', [email]);
+  const member = await pool.query('SELECT id, name FROM team_members WHERE email=$1', [email]);
+  if (!admin.rows.length && !member.rows.length) return res.status(404).json({ error: 'No account found with this email' });
+  const user = admin.rows[0] || member.rows[0];
+  const userType = admin.rows.length ? 'admin' : 'member';
+  const otp = generateOTP();
+  otpStore['reset_' + email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
+  await sendEmail(email, 'GoReturn Password Reset OTP - ' + otp, otpEmailHtml(otp, user.name));
+  res.json({ ok: true, message: 'Reset OTP sent to ' + email });
+});
+
+// Reset Password — verify OTP and set new password
+app.post('/api/admin/reset-password', async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+  if (!email || !otp || !newPassword) return res.status(400).json({ error: 'All fields required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const stored = otpStore['reset_' + email];
+  if (!stored) return res.status(400).json({ error: 'No reset OTP found. Please try again.' });
+  if (Date.now() > stored.expires) { delete otpStore['reset_' + email]; return res.status(400).json({ error: 'OTP expired. Please request a new one.' }); }
+  if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+  delete otpStore['reset_' + email];
+  const hash = hashPassword(newPassword);
+  if (stored.userType === 'admin') {
+    await pool.query('UPDATE admin_users SET password_hash=$1 WHERE id=$2', [hash, stored.userId]);
+  } else {
+    await pool.query('UPDATE team_members SET password_hash=$1 WHERE id=$2', [hash, stored.userId]);
+  }
+  res.json({ ok: true, message: 'Password reset successful' });
+});
+
 // Check session
 app.get('/api/admin/session', async (req, res) => {
   const token = req.headers['x-auth-token'];
