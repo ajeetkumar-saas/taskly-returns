@@ -19,7 +19,7 @@ async function sendEmail(to, subject, html) {
   if (!process.env.SMTP_USER) return;
   try {
     await emailTransporter.sendMail({
-      from: `"Taskly Returns" <${process.env.SMTP_USER}>`,
+      from: `"GoReturn" <${process.env.SMTP_USER}>`,
       to, subject, html
     });
   } catch(e) { console.log('Email error:', e.message); }
@@ -36,7 +36,7 @@ function returnStatusEmail(customerName, orderId, status, amount) {
   };
   const s = statusMessages[status] || statusMessages.pending;
   return `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px">
-    <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">Taskly Returns</h2></div>
+    <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">GoReturn</h2></div>
     <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px">
       <div style="text-align:center;margin-bottom:16px"><span style="display:inline-block;padding:6px 16px;border-radius:20px;background:${s.color}20;color:${s.color};font-weight:600;font-size:14px">${s.title}</span></div>
       <p style="color:#374151;font-size:14px">Hi ${customerName},</p>
@@ -46,7 +46,7 @@ function returnStatusEmail(customerName, orderId, status, amount) {
         <p style="margin:4px 0;font-size:13px;color:#6B7280">Status: <strong style="color:${s.color}">${status.toUpperCase()}</strong></p>
         ${amount ? '<p style="margin:4px 0;font-size:13px;color:#6B7280">Amount: <strong style="color:#111">₹'+amount+'</strong></p>' : ''}
       </div>
-      <p style="color:#9CA3AF;font-size:12px;margin-top:20px;text-align:center">Powered by Taskly Returns</p>
+      <p style="color:#9CA3AF;font-size:12px;margin-top:20px;text-align:center">Powered by GoReturn</p>
     </div>
   </div>`;
 }
@@ -242,7 +242,7 @@ app.get('/api/billing/create', async (req, res) => {
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({
         recurring_application_charge: {
-          name: `Taskly Returns - ${planData.name}`,
+          name: `GoReturn - ${planData.name}`,
           price: planData.price,
           return_url: `${APP_URL}/api/billing/confirm?shop=${shop}&plan=${plan}`,
           trial_days: planData.trial_days,
@@ -370,7 +370,7 @@ app.post('/api/shopify/refund', async (req, res) => {
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({
         refund: {
-          note: note || 'Refund via Taskly Returns',
+          note: note || 'Refund via GoReturn',
           transactions: calcData.refund?.transactions || [],
           shipping: { full_refund: false }
         }
@@ -1133,4 +1133,4 @@ app.use(express.static(path.join(__dirname, '../client/build')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 
 const PORT = process.env.PORT || 3001;
-initDB().then(() => app.listen(PORT, () => console.log('Taskly Returns v3.0 running on port ' + PORT)));
+initDB().then(() => app.listen(PORT, () => console.log('GoReturn v3.0 running on port ' + PORT)));
