@@ -1399,7 +1399,31 @@ app.get('/api/activity-log', authenticateRequest, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.1.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+// Shopify HMAC verification
+function verifyShopifyHmac(req) {
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  if (!hmac || !SHOPIFY_CLIENT_SECRET) return false;
+  const hash = crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(req.rawBody || JSON.stringify(req.body)).digest('base64');
+  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac));
+}
+
+// Mandatory Shopify Compliance Webhooks
+app.post('/api/webhooks/customers/data_request', (req, res) => {
+  console.log('Customer data request webhook received');
+  res.status(200).json({ ok: true });
+});
+
+app.post('/api/webhooks/customers/redact', (req, res) => {
+  console.log('Customer redact webhook received');
+  res.status(200).json({ ok: true });
+});
+
+app.post('/api/webhooks/shop/redact', (req, res) => {
+  console.log('Shop redact webhook received');
+  res.status(200).json({ ok: true });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.2.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/', (req, res) => {
   if (req.query.shop) return res.sendFile(path.join(__dirname, '../client/build/index.html'));
