@@ -115,13 +115,27 @@ a{text-decoration:none;color:inherit}
 .footer-links a:hover{color:white}
 
 @media(max-width:768px){
-  .hero h1{font-size:32px}
-  .hero-stats{gap:24px}
-  .problem-grid,.features-grid,.pricing-grid{grid-template-columns:1fr}
-  .steps{grid-template-columns:repeat(2,1fr)}
+  .hero h1{font-size:28px}
+  .hero p{font-size:14px}
+  .hero-stats{gap:16px;flex-direction:column;align-items:center}
+  .hero-buttons{flex-direction:column;gap:10px}
+  .btn-hero{width:100%;justify-content:center;text-align:center}
+  .problem-grid,.features-grid{grid-template-columns:1fr}
+  .pricing-grid{grid-template-columns:1fr !important}
+  .steps{grid-template-columns:1fr}
   .step-card:not(:last-child)::after{display:none}
   .nav-links{display:none}
+  .nav-inner{padding:0 16px}
   .hero-stat .num{font-size:24px}
+  .section-title{font-size:24px}
+  .cta h2{font-size:24px}
+  .cta-btn{width:100%;justify-content:center}
+  .footer-inner{flex-direction:column;text-align:center;gap:20px}
+  .footer-links{flex-wrap:wrap;justify-content:center;gap:16px}
+  .hero,.features,.how,.pricing,.social-proof,.cta{padding:48px 16px}
+  .problem{padding:48px 16px}
+  .brands{gap:24px}
+  .brands span{font-size:14px}
 }
 </style>
 </head>
@@ -129,7 +143,7 @@ a{text-decoration:none;color:inherit}
 
 <nav class="nav">
   <div class="nav-inner">
-    <div class="nav-logo"><img src="/logo.png" alt="GoReturn" style="height:32px"></div>
+    <div class="nav-logo"><img src="/logo.png" alt="GoReturn" style="height:40px"></div>
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#how">How it works</a>
@@ -360,7 +374,7 @@ a{text-decoration:none;color:inherit}
 
 <footer class="footer">
   <div class="footer-inner">
-    <div class="footer-logo"><img src="/logo.png" alt="GoReturn" style="height:28px;filter:brightness(0) invert(1)"></div>
+    <div class="footer-logo"><img src="/logo.png" alt="GoReturn" style="height:36px;filter:brightness(0) invert(1)"></div>
     <div class="footer-links">
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
