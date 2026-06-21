@@ -231,23 +231,79 @@ app.post('/api/admin/register', async (req, res) => {
   }
 });
 
-// Admin/Team Login
+// OTP store (in-memory, expires in 5 min)
+const otpStore = {};
+
+function generateOTP() { return Math.floor(100000 + Math.random() * 900000).toString(); }
+
+function otpEmailHtml(otp, name) {
+  return `<div style="font-family:sans-serif;max-width:440px;margin:0 auto;padding:20px">
+    <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:12px 12px 0 0"><h2 style="margin:0;font-size:20px">GoReturn</h2></div>
+    <div style="padding:28px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 12px 12px;text-align:center">
+      <p style="color:#374151;font-size:15px;margin-bottom:4px">Hi ${name || 'there'},</p>
+      <p style="color:#6B7280;font-size:14px;margin-bottom:24px">Your login verification code is:</p>
+      <div style="background:#F3F4F6;border-radius:12px;padding:20px;margin:0 auto;display:inline-block">
+        <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#4F46E5">${otp}</span>
+      </div>
+      <p style="color:#9CA3AF;font-size:12px;margin-top:20px">This code expires in 5 minutes. Do not share it.</p>
+      <p style="color:#D1D5DB;font-size:11px;margin-top:16px">If you didn't request this, ignore this email.</p>
+    </div>
+  </div>`;
+}
+
+// Admin/Team Login — Step 1: Verify credentials & send OTP
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const hash = hashPassword(password);
-  const token = crypto.randomBytes(32).toString('hex');
+  let user = null, userType = '';
   const admin = await pool.query('SELECT * FROM admin_users WHERE email=$1 AND password_hash=$2', [email, hash]);
-  if (admin.rows.length > 0) {
-    await pool.query('UPDATE admin_users SET session_token=$1, last_login=NOW() WHERE id=$2', [token, admin.rows[0].id]);
-    return res.json({ ok: true, user: { id: admin.rows[0].id, email: admin.rows[0].email, name: admin.rows[0].name, role: admin.rows[0].role }, token });
+  if (admin.rows.length > 0) { user = admin.rows[0]; userType = 'admin'; }
+  else {
+    const member = await pool.query('SELECT * FROM team_members WHERE email=$1 AND password_hash=$2', [email, hash]);
+    if (member.rows.length > 0) { user = member.rows[0]; userType = 'member'; }
   }
-  const member = await pool.query('SELECT * FROM team_members WHERE email=$1 AND password_hash=$2', [email, hash]);
-  if (member.rows.length > 0) {
-    await pool.query('UPDATE team_members SET session_token=$1, last_login=NOW(), status=$3 WHERE id=$2', [token, member.rows[0].id, 'active']);
-    return res.json({ ok: true, user: { id: member.rows[0].id, email: member.rows[0].email, name: member.rows[0].name, role: member.rows[0].role, shop_domain: member.rows[0].shop_domain }, token });
+  if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+  const otp = generateOTP();
+  otpStore[email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
+  await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, user.name));
+  res.json({ ok: true, otpSent: true, message: 'OTP sent to ' + email });
+});
+
+// Admin/Team Login — Step 2: Verify OTP
+app.post('/api/admin/verify-otp', async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+  const stored = otpStore[email];
+  if (!stored) return res.status(400).json({ error: 'No OTP found. Please login again.' });
+  if (Date.now() > stored.expires) { delete otpStore[email]; return res.status(400).json({ error: 'OTP expired. Please login again.' }); }
+  if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP. Please try again.' });
+  delete otpStore[email];
+  const token = crypto.randomBytes(32).toString('hex');
+  if (stored.userType === 'admin') {
+    await pool.query('UPDATE admin_users SET session_token=$1, last_login=NOW() WHERE id=$2', [token, stored.userId]);
+    const u = await pool.query('SELECT id, email, name, role FROM admin_users WHERE id=$1', [stored.userId]);
+    return res.json({ ok: true, user: u.rows[0], token });
+  } else {
+    await pool.query('UPDATE team_members SET session_token=$1, last_login=NOW(), status=$3 WHERE id=$2', [token, stored.userId, 'active']);
+    const u = await pool.query('SELECT id, email, name, role, shop_domain FROM team_members WHERE id=$1', [stored.userId]);
+    return res.json({ ok: true, user: u.rows[0], token });
   }
-  res.status(401).json({ error: 'Invalid email or password' });
+});
+
+// Resend OTP
+app.post('/api/admin/resend-otp', async (req, res) => {
+  const { email } = req.body;
+  const stored = otpStore[email];
+  if (!stored) return res.status(400).json({ error: 'Please login again first.' });
+  const otp = generateOTP();
+  stored.otp = otp;
+  stored.expires = Date.now() + 5 * 60 * 1000;
+  const u = stored.userType === 'admin'
+    ? await pool.query('SELECT name FROM admin_users WHERE id=$1', [stored.userId])
+    : await pool.query('SELECT name FROM team_members WHERE id=$1', [stored.userId]);
+  await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, u.rows[0]?.name));
+  res.json({ ok: true, message: 'New OTP sent to ' + email });
 });
 
 // Check session
