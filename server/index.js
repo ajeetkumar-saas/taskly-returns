@@ -47,7 +47,7 @@ function returnStatusEmail(customerName, orderId, status, amount) {
       <div style="background:#F9FAFB;border-radius:8px;padding:12px;margin:16px 0">
         <p style="margin:4px 0;font-size:13px;color:#6B7280">Order: <strong style="color:#111">${orderId}</strong></p>
         <p style="margin:4px 0;font-size:13px;color:#6B7280">Status: <strong style="color:${s.color}">${status.toUpperCase()}</strong></p>
-        ${amount ? '<p style="margin:4px 0;font-size:13px;color:#6B7280">Amount: <strong style="color:#111">₹'+amount+'</strong></p>' : ''}
+        ${amount ? '<p style="margin:4px 0;font-size:13px;color:#6B7280">Amount: <strong style="color:#111">$'+amount+'</strong></p>' : ''}
       </div>
       <p style="color:#9CA3AF;font-size:12px;margin-top:20px;text-align:center">Powered by GoReturn</p>
     </div>
@@ -486,9 +486,9 @@ app.get('/api/auth/callback', async (req, res) => {
 // Billing
 const PLANS = {
   free: { name: 'Free', price: 0, returns: 5, trial_days: 0 },
-  starter: { name: 'Starter', price: 999, returns: 50, trial_days: 15 },
-  growth: { name: 'Growth', price: 1999, returns: 150, trial_days: 15 },
-  pro: { name: 'Pro', price: 3999, returns: 500, trial_days: 15 }
+  starter: { name: 'Starter', price: 11.99, returns: 50, trial_days: 15 },
+  growth: { name: 'Growth', price: 23.99, returns: 150, trial_days: 15 },
+  pro: { name: 'Pro', price: 47.99, returns: 500, trial_days: 15 }
 };
 
 app.get('/api/billing/create', async (req, res) => {
