@@ -194,8 +194,29 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE(shop_domain, email)
     )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS activity_log (
+      id SERIAL PRIMARY KEY,
+      user_name VARCHAR(255) DEFAULT '',
+      user_email VARCHAR(255) DEFAULT '',
+      user_role VARCHAR(50) DEFAULT '',
+      action VARCHAR(255) NOT NULL,
+      details TEXT DEFAULT '',
+      ip_address VARCHAR(50) DEFAULT '',
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
   } catch(e) {}
   console.log('DB ready');
+}
+
+async function logActivity(req, action, details) {
+  try {
+    const userName = req.user?.name || 'System';
+    const userEmail = req.user?.email || '';
+    const userRole = req.user?.role || '';
+    const ip = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || '';
+    await pool.query('INSERT INTO activity_log (user_name, user_email, user_role, action, details, ip_address) VALUES ($1,$2,$3,$4,$5,$6)',
+      [userName, userEmail, userRole, action, details || '', ip]);
+  } catch(e) {}
 }
 
 function hashPassword(password) {
@@ -212,10 +233,13 @@ async function authenticateRequest(req, res, next) {
   return res.status(401).json({ error: 'Invalid session' });
 }
 
-// Admin Registration (first time setup)
+const ALLOWED_ADMIN_EMAIL = 'ajeetkumar.saas@gmail.com';
+
+// Admin Registration (locked to owner email only)
 app.post('/api/admin/register', async (req, res) => {
   const { email, password, name } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  if (email.toLowerCase() !== ALLOWED_ADMIN_EMAIL) return res.status(403).json({ error: 'Admin registration is not available. Contact admin.' });
   try {
     const existing = await pool.query('SELECT id FROM admin_users LIMIT 1');
     if (existing.rows.length > 0) return res.status(403).json({ error: 'Admin already exists. Use login.' });
@@ -283,10 +307,14 @@ app.post('/api/admin/verify-otp', async (req, res) => {
   if (stored.userType === 'admin') {
     await pool.query('UPDATE admin_users SET session_token=$1, last_login=NOW() WHERE id=$2', [token, stored.userId]);
     const u = await pool.query('SELECT id, email, name, role FROM admin_users WHERE id=$1', [stored.userId]);
+    req.user = u.rows[0];
+    await logActivity(req, 'Login', 'Admin login via OTP');
     return res.json({ ok: true, user: u.rows[0], token });
   } else {
     await pool.query('UPDATE team_members SET session_token=$1, last_login=NOW(), status=$3 WHERE id=$2', [token, stored.userId, 'active']);
     const u = await pool.query('SELECT id, email, name, role, shop_domain FROM team_members WHERE id=$1', [stored.userId]);
+    req.user = u.rows[0];
+    await logActivity(req, 'Login', 'Team member login via OTP');
     return res.json({ ok: true, user: u.rows[0], token });
   }
 });
@@ -451,8 +479,8 @@ app.get('/api/auth/callback', async (req, res) => {
 const PLANS = {
   free: { name: 'Free', price: 0, returns: 5, trial_days: 0 },
   starter: { name: 'Starter', price: 999, returns: 50, trial_days: 15 },
-  growth: { name: 'Growth', price: 1999, returns: 200, trial_days: 15 },
-  pro: { name: 'Pro', price: 4999, returns: 999999, trial_days: 15 }
+  growth: { name: 'Growth', price: 1999, returns: 150, trial_days: 15 },
+  pro: { name: 'Pro', price: 3999, returns: 500, trial_days: 15 }
 };
 
 app.get('/api/billing/create', async (req, res) => {

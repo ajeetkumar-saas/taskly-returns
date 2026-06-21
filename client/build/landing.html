@@ -274,52 +274,64 @@ a{text-decoration:none;color:inherit}
     <div class="section-label">Pricing</div>
     <div class="section-title">Simple, transparent pricing</div>
     <div class="section-sub">Start free. Upgrade when you grow.</div>
-    <div class="pricing-grid">
+    <div class="pricing-grid" style="grid-template-columns:repeat(4,1fr)">
       <div class="pricing-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-desc">Try it out</div>
+        <div class="price">₹0<span>/mo</span></div>
+        <div class="price-period">5 returns/month</div>
+        <ul>
+          <li><i class="fas fa-check"></i> Return portal</li>
+          <li><i class="fas fa-check"></i> Basic dashboard</li>
+          <li><i class="fas fa-check"></i> Email notifications</li>
+          <li><i class="fas fa-check"></i> 1 store</li>
+        </ul>
+        <button class="pricing-btn outline" onclick="showInstallModal()">Start free</button>
+      </div>
+      <div class="pricing-card popular">
         <div class="plan-name">Starter</div>
         <div class="plan-desc">For small stores</div>
         <div class="price">₹999<span>/mo</span></div>
-        <div class="price-period">Up to 50 returns/month</div>
+        <div class="price-period">50 returns/month</div>
         <ul>
-          <li><i class="fas fa-check"></i> Self-service return portal</li>
-          <li><i class="fas fa-check"></i> Dashboard & analytics</li>
-          <li><i class="fas fa-check"></i> Email notifications</li>
-          <li><i class="fas fa-check"></i> Shopify auto-refund</li>
-          <li><i class="fas fa-check"></i> 1 store</li>
-        </ul>
-        <button class="pricing-btn outline" onclick="showInstallModal()">Get started</button>
-      </div>
-      <div class="pricing-card popular">
-        <div class="plan-name">Growth</div>
-        <div class="plan-desc">For growing brands</div>
-        <div class="price">₹1,999<span>/mo</span></div>
-        <div class="price-period">Up to 200 returns/month</div>
-        <ul>
-          <li><i class="fas fa-check"></i> Everything in Starter</li>
-          <li><i class="fas fa-check"></i> WhatsApp notifications</li>
+          <li><i class="fas fa-check"></i> Everything in Free</li>
+          <li><i class="fas fa-check"></i> Exchanges</li>
+          <li><i class="fas fa-check"></i> Analytics & Export</li>
           <li><i class="fas fa-check"></i> Shiprocket integration</li>
-          <li><i class="fas fa-check"></i> Auto-approve rules</li>
-          <li><i class="fas fa-check"></i> Exchange support</li>
-          <li><i class="fas fa-check"></i> 3 stores</li>
+          <li><i class="fas fa-check"></i> Shopify auto-refund</li>
         </ul>
         <button class="pricing-btn primary" onclick="showInstallModal()">Get started</button>
       </div>
       <div class="pricing-card">
+        <div class="plan-name">Growth</div>
+        <div class="plan-desc">For growing brands</div>
+        <div class="price">₹1,999<span>/mo</span></div>
+        <div class="price-period">150 returns/month</div>
+        <ul>
+          <li><i class="fas fa-check"></i> Everything in Starter</li>
+          <li><i class="fas fa-check"></i> Automation rules</li>
+          <li><i class="fas fa-check"></i> Fraud detection</li>
+          <li><i class="fas fa-check"></i> Promotions</li>
+          <li><i class="fas fa-check"></i> Store analytics</li>
+        </ul>
+        <button class="pricing-btn outline" onclick="showInstallModal()">Get started</button>
+      </div>
+      <div class="pricing-card">
         <div class="plan-name">Pro</div>
-        <div class="plan-desc">For large operations</div>
-        <div class="price">₹4,999<span>/mo</span></div>
-        <div class="price-period">Unlimited returns</div>
+        <div class="plan-desc">For large D2C</div>
+        <div class="price">₹3,999<span>/mo</span></div>
+        <div class="price-period">500 returns/month</div>
         <ul>
           <li><i class="fas fa-check"></i> Everything in Growth</li>
-          <li><i class="fas fa-check"></i> Multiple courier support</li>
-          <li><i class="fas fa-check"></i> Custom branding</li>
+          <li><i class="fas fa-check"></i> Webhooks & API</li>
           <li><i class="fas fa-check"></i> Priority support</li>
-          <li><i class="fas fa-check"></i> API access</li>
           <li><i class="fas fa-check"></i> Unlimited stores</li>
+          <li><i class="fas fa-check"></i> All features</li>
         </ul>
-        <button class="pricing-btn outline" onclick="showInstallModal()">Contact sales</button>
+        <button class="pricing-btn outline" onclick="showInstallModal()">Get started</button>
       </div>
     </div>
+    <p style="text-align:center;color:var(--gray-400);font-size:13px;margin-top:20px">Need more? <a href="mailto:goreturn.support@gmail.com" style="color:var(--primary);font-weight:600">Contact us</a> for Enterprise pricing with unlimited returns.</p>
   </div>
 </section>
 
