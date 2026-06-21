@@ -6,21 +6,23 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { Pool } = require('pg');
 
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY || '');
-
 let lastEmailError = '';
 async function sendEmail(to, subject, html) {
   if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
   try {
-    const { error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'GoReturn <onboarding@resend.dev>',
-      to: [to],
-      subject,
-      html
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || 'GoReturn <onboarding@resend.dev>',
+        to: [to],
+        subject,
+        html
+      })
     });
-    if (error) { lastEmailError = error.message; console.log('Email error:', error.message); return false; }
-    console.log('Email sent to:', to);
+    const d = await r.json();
+    if (!r.ok || d.error) { lastEmailError = d.message || d.error?.message || 'Send failed'; console.log('Email error:', lastEmailError); return false; }
+    console.log('Email sent to:', to, 'id:', d.id);
     lastEmailError = '';
     return true;
   } catch(e) { lastEmailError = e.message; console.log('Email error:', e.message); return false; }
