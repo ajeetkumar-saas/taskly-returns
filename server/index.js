@@ -16,13 +16,15 @@ const emailTransporter = nodemailer.createTransport({
 });
 
 async function sendEmail(to, subject, html) {
-  if (!process.env.SMTP_USER) return;
+  if (!process.env.SMTP_USER) { console.log('SMTP_USER not set, skipping email'); return false; }
   try {
     await emailTransporter.sendMail({
       from: `"GoReturn" <${process.env.SMTP_USER}>`,
       to, subject, html
     });
-  } catch(e) { console.log('Email error:', e.message); }
+    console.log('Email sent to:', to);
+    return true;
+  } catch(e) { console.log('Email error:', e.message); return false; }
 }
 
 function returnStatusEmail(customerName, orderId, status, amount) {
@@ -290,7 +292,8 @@ app.post('/api/admin/login', async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
   const otp = generateOTP();
   otpStore[email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
-  await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, user.name));
+  const sent = await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, user.name));
+  if (!sent) return res.status(500).json({ error: 'Email service not configured. Contact admin.' });
   res.json({ ok: true, otpSent: true, message: 'OTP sent to ' + email });
 });
 
@@ -345,7 +348,8 @@ app.post('/api/admin/forgot-password', async (req, res) => {
   const userType = admin.rows.length ? 'admin' : 'member';
   const otp = generateOTP();
   otpStore['reset_' + email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
-  await sendEmail(email, 'GoReturn Password Reset OTP - ' + otp, otpEmailHtml(otp, user.name));
+  const sent = await sendEmail(email, 'GoReturn Password Reset OTP - ' + otp, otpEmailHtml(otp, user.name));
+  if (!sent) return res.status(500).json({ error: 'Email service not configured. Contact admin.' });
   res.json({ ok: true, message: 'Reset OTP sent to ' + email });
 });
 
@@ -1394,7 +1398,7 @@ app.get('/api/activity-log', authenticateRequest, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL, smtp: !!process.env.SMTP_USER }));
 
 app.get('/', (req, res) => {
   if (req.query.shop) return res.sendFile(path.join(__dirname, '../client/build/index.html'));
