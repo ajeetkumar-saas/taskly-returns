@@ -1432,9 +1432,13 @@ app.post('/api/webhooks/customers/redact', (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.post('/api/webhooks/shop/redact', (req, res) => {
+app.post('/api/webhooks/shop/redact', async (req, res) => {
   if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
   console.log('Shop redact webhook received');
+  const shopDomain = req.body?.shop_domain;
+  if (shopDomain) {
+    try { await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
+  }
   res.status(200).json({ ok: true });
 });
 
@@ -1443,9 +1447,19 @@ app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.2.0', ship
 app.get('/', async (req, res) => {
   const shop = req.query.shop;
   if (shop) {
+    if (req.query.connected === 'true') {
+      return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+    }
     try {
       const result = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain = $1', [shop]);
       if (!result.rows.length || !result.rows[0].access_token) {
+        return res.redirect(`/api/auth/shopify?shop=${shop}`);
+      }
+      const check = await fetch(`https://${shop}/admin/api/2024-01/shop.json`, {
+        headers: { 'X-Shopify-Access-Token': result.rows[0].access_token }
+      });
+      if (!check.ok) {
+        await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shop]);
         return res.redirect(`/api/auth/shopify?shop=${shop}`);
       }
     } catch(e) {
