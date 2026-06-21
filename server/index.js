@@ -56,7 +56,10 @@ function returnStatusEmail(customerName, orderId, status, amount) {
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; }
+}));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 const pool = new Pool({
@@ -446,8 +449,14 @@ app.get('/api/auth/shopify', (req, res) => {
 });
 
 app.get('/api/auth/callback', async (req, res) => {
-  const { shop, code } = req.query;
+  const { shop, code, hmac, ...rest } = req.query;
   if (!shop || !code) return res.status(400).send('Missing params');
+  if (hmac && SHOPIFY_CLIENT_SECRET) {
+    const params = Object.keys(rest).sort().map(k => `${k}=${rest[k]}`).join('&') + (Object.keys(rest).length ? '&' : '') + `code=${code}&shop=${shop}&state=${req.query.state || ''}&timestamp=${req.query.timestamp || ''}`;
+    const sortedParams = Object.entries(req.query).filter(([k]) => k !== 'hmac').sort(([a],[b]) => a.localeCompare(b)).map(([k,v]) => `${k}=${v}`).join('&');
+    const digest = crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(sortedParams).digest('hex');
+    if (digest !== hmac) return res.status(403).send('HMAC verification failed');
+  }
   try {
     const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -475,8 +484,8 @@ app.get('/api/auth/callback', async (req, res) => {
     }
 
     const plan = req.query.plan || 'starter';
-    if (plan === 'free_trial') {
-      res.redirect(`/?shop=${shop}&connected=true`);
+    if (plan === 'free_trial' || plan === 'free') {
+      res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
     } else {
       res.redirect(`/api/billing/create?shop=${shop}&plan=${plan}`);
     }
@@ -1403,22 +1412,28 @@ app.get('/api/activity-log', authenticateRequest, async (req, res) => {
 function verifyShopifyHmac(req) {
   const hmac = req.get('X-Shopify-Hmac-Sha256');
   if (!hmac || !SHOPIFY_CLIENT_SECRET) return false;
-  const hash = crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(req.rawBody || JSON.stringify(req.body)).digest('base64');
-  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac));
+  const body = req.rawBody || Buffer.from(JSON.stringify(req.body));
+  const hash = crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(body).digest('base64');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac));
+  } catch(e) { return false; }
 }
 
 // Mandatory Shopify Compliance Webhooks
 app.post('/api/webhooks/customers/data_request', (req, res) => {
+  if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
   console.log('Customer data request webhook received');
   res.status(200).json({ ok: true });
 });
 
 app.post('/api/webhooks/customers/redact', (req, res) => {
+  if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
   console.log('Customer redact webhook received');
   res.status(200).json({ ok: true });
 });
 
 app.post('/api/webhooks/shop/redact', (req, res) => {
+  if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
   console.log('Shop redact webhook received');
   res.status(200).json({ ok: true });
 });
