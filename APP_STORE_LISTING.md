@@ -7,7 +7,7 @@ GoReturn — COD Returns Manager
 Automate COD returns, exchanges & refunds for Indian D2C brands
 
 ## Short Description (100 chars)
-Reduce RTO by 40%. Self-service return portal, auto-refunds, WhatsApp alerts. Built for India.
+Reduce RTO by 40%. Self-service return portal, auto-refunds, email alerts. Built for India.
 
 ## Detailed Description
 
@@ -31,14 +31,17 @@ Shiprocket, Delhivery, BlueDart, Ecom Express — connect your preferred shippin
 **Smart Dashboard**
 See all returns in one place. Filter by status, track refund amounts, identify top return reasons, and make data-driven decisions.
 
-**WhatsApp Notifications**
+**Email Notifications**
 Auto-notify customers at every step — request received, approved, pickup scheduled, refund processed. No manual follow-ups.
 
 **Exchange Instead of Refund**
 Offer exchanges to retain revenue. Customer picks a new size or color — you keep the sale.
 
-**Store Credit Option**
-Offer store credit as a refund method. Customers come back to shop again.
+**Fraud Detection & Pincode Risk**
+Identify suspicious return patterns and high-risk pincodes to prevent fraud before it happens.
+
+**Automation Rules**
+Set smart rules for auto-approvals, auto-refunds, and notifications to save time.
 
 ### How it works:
 1. Install the app (free, 2 minutes)
@@ -54,15 +57,16 @@ Offer store credit as a refund method. Customers come back to shop again.
 - Any Shopify store with COD orders
 
 ### Pricing:
-- **Starter** ₹999/mo — Up to 50 returns, 1 store
-- **Growth** ₹1,999/mo — Up to 200 returns, WhatsApp, 3 stores
-- **Pro** ₹4,999/mo — Unlimited returns, API access, unlimited stores
+- **Free** ₹0/mo — 5 returns/month, basic portal
+- **Starter** ₹999/mo — 50 returns, exchanges, analytics, Shiprocket
+- **Growth** ₹1,999/mo — 150 returns, automation, fraud detection, promotions
+- **Pro** ₹3,999/mo — 500 returns, webhooks, API, priority support
 
 ## Category
 Orders and shipping > Returns and exchanges
 
 ## Keywords
-returns, COD, RTO, refund, exchange, return management, COD returns, D2C, India, return portal, Shiprocket, WhatsApp, reverse logistics
+returns, COD, RTO, refund, exchange, return management, COD returns, D2C, India, return portal, Shiprocket, reverse logistics
 
 ## App URL
 https://goreturn.pro
@@ -71,11 +75,11 @@ https://goreturn.pro
 https://goreturn.pro/privacy
 
 ## Support Email
-ajeetkumar.saas@gmail.com
+goreturn.support@gmail.com
 
-## Screenshots Needed (create these manually)
-1. Dashboard with stats cards and returns table
-2. Customer return portal — step 1 (find order)
-3. Customer return portal — step 2 (select items)
-4. Return approval flow (approve/reject buttons)
-5. Landing page hero section
+## Screenshots (5 banners ready)
+1. Dashboard — "Manage Returns & Exchanges in One Dashboard"
+2. Problem vs Solution — "Stop Losing Money on COD Returns"
+3. Return Portal — "Branded Self-Service Return Portal"
+4. Features — "25+ Powerful Features for Indian D2C Brands"
+5. Pricing — "Simple Pricing. Powerful Returns."
