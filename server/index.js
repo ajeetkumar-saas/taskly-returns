@@ -15,16 +15,18 @@ const emailTransporter = nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER || '', pass: process.env.SMTP_PASS || '' }
 });
 
+let lastEmailError = '';
 async function sendEmail(to, subject, html) {
-  if (!process.env.SMTP_USER) { console.log('SMTP_USER not set, skipping email'); return false; }
+  if (!process.env.SMTP_USER) { lastEmailError = 'SMTP_USER not set'; console.log(lastEmailError); return false; }
   try {
     await emailTransporter.sendMail({
       from: `"GoReturn" <${process.env.SMTP_USER}>`,
       to, subject, html
     });
     console.log('Email sent to:', to);
+    lastEmailError = '';
     return true;
-  } catch(e) { console.log('Email error:', e.message); return false; }
+  } catch(e) { lastEmailError = e.message; console.log('Email error:', e.message); return false; }
 }
 
 function returnStatusEmail(customerName, orderId, status, amount) {
@@ -293,7 +295,7 @@ app.post('/api/admin/login', async (req, res) => {
   const otp = generateOTP();
   otpStore[email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
   const sent = await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, user.name));
-  if (!sent) return res.status(500).json({ error: 'Email service not configured. Contact admin.' });
+  if (!sent) return res.status(500).json({ error: 'Email failed: ' + (lastEmailError || 'Unknown error') });
   res.json({ ok: true, otpSent: true, message: 'OTP sent to ' + email });
 });
 
@@ -349,7 +351,7 @@ app.post('/api/admin/forgot-password', async (req, res) => {
   const otp = generateOTP();
   otpStore['reset_' + email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
   const sent = await sendEmail(email, 'GoReturn Password Reset OTP - ' + otp, otpEmailHtml(otp, user.name));
-  if (!sent) return res.status(500).json({ error: 'Email service not configured. Contact admin.' });
+  if (!sent) return res.status(500).json({ error: 'Email failed: ' + (lastEmailError || 'Unknown error') });
   res.json({ ok: true, message: 'Reset OTP sent to ' + email });
 });
 
@@ -1398,7 +1400,7 @@ app.get('/api/activity-log', authenticateRequest, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL, smtp: !!process.env.SMTP_USER }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL, smtp: !!process.env.SMTP_USER, smtp_user: process.env.SMTP_USER ? process.env.SMTP_USER.substring(0,5)+'***' : 'NOT SET', smtp_pass_len: (process.env.SMTP_PASS||'').length, last_email_error: lastEmailError || 'none' }));
 
 app.get('/', (req, res) => {
   if (req.query.shop) return res.sendFile(path.join(__dirname, '../client/build/index.html'));
