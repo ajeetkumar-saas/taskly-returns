@@ -1440,8 +1440,19 @@ app.post('/api/webhooks/shop/redact', (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.2.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
-app.get('/', (req, res) => {
-  if (req.query.shop) return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+app.get('/', async (req, res) => {
+  const shop = req.query.shop;
+  if (shop) {
+    try {
+      const result = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain = $1', [shop]);
+      if (!result.rows.length || !result.rows[0].access_token) {
+        return res.redirect(`/api/auth/shopify?shop=${shop}`);
+      }
+    } catch(e) {
+      return res.redirect(`/api/auth/shopify?shop=${shop}`);
+    }
+    return res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  }
   res.sendFile(path.join(__dirname, '../client/build/landing.html'));
 });
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, '../client/build/login.html')));
