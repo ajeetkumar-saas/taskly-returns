@@ -1320,20 +1320,17 @@ app.delete('/api/locations/:id', async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL }));
 
-app.use(express.static(path.join(__dirname, '../client/build')));
-
 app.get('/', (req, res) => {
-  const shop = req.query.shop;
-  if (shop) {
-    return res.sendFile(path.join(__dirname, '../client/build/index.html'));
-  }
+  if (req.query.shop) return res.sendFile(path.join(__dirname, '../client/build/index.html'));
   res.sendFile(path.join(__dirname, '../client/build/landing.html'));
 });
-
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, '../client/build/login.html')));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 app.get('/return', (req, res) => res.sendFile(path.join(__dirname, '../client/build/return.html')));
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '../client/build/privacy.html')));
+
+app.use(express.static(path.join(__dirname, '../client/build'), { index: false }));
+
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 
 const PORT = process.env.PORT || 3001;
