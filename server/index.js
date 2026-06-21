@@ -6,21 +6,20 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { Pool } = require('pg');
 
-const nodemailer = require('nodemailer');
-
-const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.SMTP_USER || '', pass: process.env.SMTP_PASS || '' }
-});
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY || '');
 
 let lastEmailError = '';
 async function sendEmail(to, subject, html) {
-  if (!process.env.SMTP_USER) { lastEmailError = 'SMTP_USER not set'; console.log(lastEmailError); return false; }
+  if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
   try {
-    await emailTransporter.sendMail({
-      from: `"GoReturn" <${process.env.SMTP_USER}>`,
-      to, subject, html
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'GoReturn <onboarding@resend.dev>',
+      to: [to],
+      subject,
+      html
     });
+    if (error) { lastEmailError = error.message; console.log('Email error:', error.message); return false; }
     console.log('Email sent to:', to);
     lastEmailError = '';
     return true;
@@ -1398,7 +1397,7 @@ app.get('/api/activity-log', authenticateRequest, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.0.0', shiprocket: !!SHIPROCKET_EMAIL, smtp: !!process.env.SMTP_USER, smtp_user: process.env.SMTP_USER ? process.env.SMTP_USER.substring(0,5)+'***' : 'NOT SET', smtp_pass_len: (process.env.SMTP_PASS||'').length, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.1.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/', (req, res) => {
   if (req.query.shop) return res.sendFile(path.join(__dirname, '../client/build/index.html'));
