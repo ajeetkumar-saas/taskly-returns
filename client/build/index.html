@@ -150,6 +150,18 @@ tbody tr:hover{background:var(--gray-50)}
 
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
+      <div class="filter-bar" style="margin-bottom:16px">
+        <span style="font-size:12px;color:var(--gray-500);margin-right:8px"><i class="fas fa-calendar"></i> Period:</span>
+        <button class="date-btn" onclick="setGlobalDate('today',this)">Today</button>
+        <button class="date-btn" onclick="setGlobalDate('yesterday',this)">Yesterday</button>
+        <button class="date-btn active" onclick="setGlobalDate('7',this)">Last 7 Days</button>
+        <button class="date-btn" onclick="setGlobalDate('30',this)">Last 30 Days</button>
+        <button class="date-btn" onclick="setGlobalDate('90',this)">Last 90 Days</button>
+        <button class="date-btn" onclick="setGlobalDate('all',this)">All Time</button>
+        <input type="date" id="customDateFrom" style="padding:4px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:11px;margin-left:8px" onchange="setCustomDate()">
+        <span style="font-size:11px;color:var(--gray-400)">to</span>
+        <input type="date" id="customDateTo" style="padding:4px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:11px" onchange="setCustomDate()">
+      </div>
       <div class="stats-grid">
         <div class="stat-card"><div class="icon" style="background:var(--primary-light);color:var(--primary)"><i class="fas fa-rotate-left"></i></div><div class="val" id="sTotal">0</div><div class="lbl">Total Returns</div></div>
         <div class="stat-card"><div class="icon" style="background:var(--warning-light);color:var(--warning)"><i class="fas fa-clock"></i></div><div class="val" id="sPending">0</div><div class="lbl">Pending</div></div>
@@ -179,11 +191,13 @@ tbody tr:hover{background:var(--gray-50)}
         <button class="filter-btn" onclick="filterR('processed',this)">Processed</button>
         <button class="filter-btn" onclick="filterR('rejected',this)">Rejected</button>
         <button class="filter-btn" onclick="filterR('archived',this)">Archived</button>
-        <div style="margin-left:auto;display:flex;gap:4px">
-          <button class="date-btn active" onclick="filterDate('all',this)">All Time</button>
+        <div style="margin-left:auto;display:flex;gap:4px;align-items:center">
           <button class="date-btn" onclick="filterDate('today',this)">Today</button>
+          <button class="date-btn" onclick="filterDate('yesterday',this)">Yesterday</button>
           <button class="date-btn" onclick="filterDate('7',this)">7 Days</button>
           <button class="date-btn" onclick="filterDate('30',this)">30 Days</button>
+          <button class="date-btn" onclick="filterDate('90',this)">90 Days</button>
+          <button class="date-btn active" onclick="filterDate('all',this)">All</button>
         </div>
       </div>
       <div class="card"><div class="card-body" style="padding:0"><table><thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Product</th><th>Reason</th><th>Type</th><th>Refund</th><th>Amount</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody id="returnsTb"><tr><td colspan="11" class="empty">Loading...</td></tr></tbody></table></div></div>
@@ -198,13 +212,20 @@ tbody tr:hover{background:var(--gray-50)}
         <button class="filter-btn" onclick="filterE('inspected',this)">Inspected</button>
         <button class="filter-btn" onclick="filterE('processed',this)">Exchanged</button>
         <button class="filter-btn" onclick="filterE('rejected',this)">Rejected</button>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          <button class="date-btn" onclick="filterExDate('today',this)">Today</button>
+          <button class="date-btn" onclick="filterExDate('yesterday',this)">Yesterday</button>
+          <button class="date-btn" onclick="filterExDate('7',this)">7 Days</button>
+          <button class="date-btn" onclick="filterExDate('30',this)">30 Days</button>
+          <button class="date-btn active" onclick="filterExDate('all',this)">All</button>
+        </div>
       </div>
       <div class="card"><div class="card-body" style="padding:0"><table><thead><tr><th>ID</th><th>Order</th><th>Customer</th><th>Original Product</th><th>Exchange For</th><th>Reason</th><th>Amount</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody id="exchangeTb"><tr><td colspan="10" class="empty"><i class="fas fa-exchange-alt"></i>No exchanges yet</td></tr></tbody></table></div></div>
     </div>
 
     <!-- Analytics Page -->
     <div class="page" id="page-analytics">
-      <div class="filter-bar"><div style="display:flex;gap:4px"><button class="date-btn active" onclick="loadAnalytics(7,this)">7 Days</button><button class="date-btn" onclick="loadAnalytics(30,this)">30 Days</button><button class="date-btn" onclick="loadAnalytics(90,this)">90 Days</button></div></div>
+      <div class="filter-bar"><span style="font-size:12px;color:var(--gray-500);margin-right:8px"><i class="fas fa-calendar"></i> Period:</span><button class="date-btn" onclick="loadAnalytics(1,this)">Today</button><button class="date-btn active" onclick="loadAnalytics(7,this)">7 Days</button><button class="date-btn" onclick="loadAnalytics(30,this)">30 Days</button><button class="date-btn" onclick="loadAnalytics(90,this)">90 Days</button><button class="date-btn" onclick="loadAnalytics(365,this)">1 Year</button></div>
       <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="stat-card"><div class="lbl">Requests Raised</div><div class="val" id="aRaised">0</div></div>
         <div class="stat-card"><div class="lbl">Request Rate</div><div class="val" id="aRate">0%</div></div>
@@ -453,7 +474,7 @@ UPI</textarea></div>
 </div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createReturn()"><i class="fas fa-check"></i> Submit</button></div></div></div>
 
 <script>
-let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return',currentPlan='free';
+let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return',currentPlan='free',globalDate='7',exDate='all';
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
 let analyticsData=null,curATab='requests';
 
@@ -464,17 +485,17 @@ async function loadStores(){const r=await fetch('/api/shopify/stores');const s=a
 function connectShop(){const s=document.getElementById('shopDomain').value.trim();if(!s)return showAlert('Enter store domain','error');location.href='/api/auth/shopify?shop='+s;}
 
 async function loadReturns(){const r=await fetch('/api/returns');allReturns=await r.json();updateStats();renderReturns();renderExchanges();renderRecent();}
-function updateStats(){const t=allReturns.length,p=allReturns.filter(r=>r.status==='pending').length,a=allReturns.filter(r=>r.status==='approved').length,i=allReturns.filter(r=>r.status==='inspected').length,rf=allReturns.filter(r=>r.status==='refunded').length,rj=allReturns.filter(r=>r.status==='rejected').length,ex=allReturns.filter(r=>r.type==='exchange').length,amt=allReturns.reduce((s,r)=>s+parseFloat(r.amount||0),0),saved=allReturns.filter(r=>r.type==='exchange').reduce((s,r)=>s+parseFloat(r.amount||0),0);
+function updateStats(){const filtered=filterByDate(allReturns,globalDate);const t=filtered.length,p=filtered.filter(r=>r.status==='pending').length,a=filtered.filter(r=>r.status==='approved').length,i=filtered.filter(r=>r.status==='inspected').length,rf=filtered.filter(r=>r.status==='refunded').length,rj=filtered.filter(r=>r.status==='rejected').length,ex=filtered.filter(r=>r.type==='exchange').length,amt=filtered.reduce((s,r)=>s+parseFloat(r.amount||0),0),saved=filtered.filter(r=>r.type==='exchange').reduce((s,r)=>s+parseFloat(r.amount||0),0);
 document.getElementById('sTotal').textContent=t;document.getElementById('sPending').textContent=p;document.getElementById('sApproved').textContent=a;document.getElementById('sInspected').textContent=i;document.getElementById('sRefunded').textContent=rf;document.getElementById('sRejected').textContent=rj;document.getElementById('sExchanges').textContent=ex;document.getElementById('sRevSaved').textContent='₹'+Math.round(saved).toLocaleString('en-IN');document.getElementById('pendingBadge').textContent=p;}
 
-function renderReturns(){const returns=allReturns.filter(r=>r.type!=='exchange');let f=curFilter==='all'?returns:returns.filter(r=>r.status===curFilter);if(curDate!=='all'){const now=new Date();let from;if(curDate==='today'){from=new Date(now.getFullYear(),now.getMonth(),now.getDate());}else{from=new Date(now-parseInt(curDate)*86400000);}f=f.filter(r=>new Date(r.created_at)>=from);}
+function renderReturns(){const returns=allReturns.filter(r=>r.type!=='exchange');let f=curFilter==='all'?returns:returns.filter(r=>r.status===curFilter);f=filterByDate(f,curDate);
 const tb=document.getElementById('returnsTb');if(!f.length){tb.innerHTML='<tr><td colspan="11" class="empty"><i class="fas fa-inbox"></i>No returns found</td></tr>';return;}
 tb.innerHTML=f.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${r.order_number||r.order_id||'-'}</td><td><div>${r.customer_name||'-'}</div><div style="font-size:10px;color:var(--gray-400)">${r.customer_email||''}</div></td><td>${r.product_name||'-'}${r.images?'<br><span style="font-size:10px;color:var(--info);cursor:pointer" onclick="viewImages(\''+encodeURIComponent(r.images)+'\')"><i class="fas fa-image"></i> '+r.images.split('|||').filter(Boolean).length+' photo(s)</span>':''}</td><td>${fmtReason(r.reason)}</td><td><span class="badge badge-pending">Return</span></td><td style="font-size:11px">${fmtRefund(r.refund_method)}</td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
 
-function renderExchanges(){const ex=allReturns.filter(r=>r.type==='exchange');const tb=document.getElementById('exchangeTb');if(!ex.length){tb.innerHTML='<tr><td colspan="10" class="empty"><i class="fas fa-exchange-alt"></i>No exchanges</td></tr>';return;}
+function renderExchanges(){const ex=filterByDate(allReturns.filter(r=>r.type==='exchange'),exDate);const tb=document.getElementById('exchangeTb');if(!ex.length){tb.innerHTML='<tr><td colspan="10" class="empty"><i class="fas fa-exchange-alt"></i>No exchanges</td></tr>';return;}
 tb.innerHTML=ex.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><strong>${r.exchange_product||'-'}</strong> ${r.exchange_variant?'('+r.exchange_variant+')':''}</td><td>${fmtReason(r.reason)}</td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
 
-function renderRecent(){const p=allReturns.filter(r=>r.status==='pending').slice(0,5);const tb=document.getElementById('recentTb');if(!p.length){tb.innerHTML='<tr><td colspan="8" class="empty"><i class="fas fa-check-circle" style="color:var(--success)"></i>No pending</td></tr>';return;}
+function renderRecent(){const p=filterByDate(allReturns,globalDate).filter(r=>r.status==='pending').slice(0,5);const tb=document.getElementById('recentTb');if(!p.length){tb.innerHTML='<tr><td colspan="8" class="empty"><i class="fas fa-check-circle" style="color:var(--success)"></i>No pending</td></tr>';return;}
 tb.innerHTML=p.map(r=>`<tr><td>#${r.id}</td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><span class="badge badge-${r.type==='exchange'?'exchange':'pending'}">${r.type||'return'}</span></td><td class="amount">₹${Number(r.amount||0).toLocaleString('en-IN')}</td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td><button class="action-btn" style="background:var(--success-light);color:var(--success)" onclick="upd(${r.id},'approved')"><i class="fas fa-check"></i></button><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="upd(${r.id},'rejected')"><i class="fas fa-times"></i></button></td></tr>`).join('');}
 
 function getActions(r){
@@ -484,6 +505,15 @@ function getActions(r){
   if(r.status==='refunded')return`<button class="action-btn" style="background:#DBEAFE;color:#1D4ED8" onclick="upd(${r.id},'processed')">Complete</button>`;
   return`<button class="action-btn" style="background:var(--gray-100);color:var(--gray-500)" onclick="archive(${r.id})">Archive</button>`;
 }
+
+function getDateFrom(period){const now=new Date();if(period==='today')return new Date(now.getFullYear(),now.getMonth(),now.getDate());if(period==='yesterday'){const y=new Date(now);y.setDate(y.getDate()-1);return new Date(y.getFullYear(),y.getMonth(),y.getDate());}if(period==='all')return null;return new Date(now-parseInt(period)*86400000);}
+function getDateTo(period){if(period==='yesterday'){const now=new Date();return new Date(now.getFullYear(),now.getMonth(),now.getDate());}return null;}
+function filterByDate(items,period){if(period==='all')return items;const from=getDateFrom(period);const to=getDateTo(period);return items.filter(r=>{const d=new Date(r.created_at);if(from&&d<from)return false;if(to&&d>=to)return false;return true;});}
+
+function setGlobalDate(period,btn){globalDate=period;document.querySelectorAll('#page-dashboard .date-btn').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');updateStats();renderDashCharts();renderRecent();}
+function setCustomDate(){const from=document.getElementById('customDateFrom').value;const to=document.getElementById('customDateTo').value;if(from){globalDate='custom';document.querySelectorAll('#page-dashboard .date-btn').forEach(x=>x.classList.remove('active'));updateStats();renderDashCharts();renderRecent();}}
+
+function filterExDate(period,btn){exDate=period;document.querySelectorAll('#page-exchanges .date-btn').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active');renderExchanges();}
 
 function filterR(s,b){curFilter=s;document.querySelectorAll('#page-returns .filter-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderReturns();}
 function filterDate(d,b){curDate=d;document.querySelectorAll('.date-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderReturns();}
@@ -504,7 +534,7 @@ function renderReasonPie(){if(!analyticsData)return;const labels=analyticsData.b
 function renderStatusPie(){if(!analyticsData)return;const labels=analyticsData.by_status.map(r=>r.status);const data=analyticsData.by_status.map(r=>parseInt(r.count));const colors=['#D97706','#059669','#7C3AED','#0284C7','#1D4ED8','#DC2626','#9CA3AF'];if(statusPieObj)statusPieObj.destroy();statusPieObj=new Chart(document.getElementById('statusPieChart'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});}
 
 // Dashboard charts
-function renderDashCharts(){const last7=allReturns.filter(r=>{const d=new Date(r.created_at);return d>=new Date(Date.now()-7*86400000);});const days={};for(let i=6;i>=0;i--){const d=new Date(Date.now()-i*86400000);const k=d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});days[k]={count:0,reasons:{}};}last7.forEach(r=>{const k=new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'});if(days[k])days[k].count++;});
+function renderDashCharts(){const last7=filterByDate(allReturns,globalDate);const days={};for(let i=6;i>=0;i--){const d=new Date(Date.now()-i*86400000);const k=d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});days[k]={count:0,reasons:{}};}last7.forEach(r=>{const k=new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'});if(days[k])days[k].count++;});
 if(trendChartObj)trendChartObj.destroy();trendChartObj=new Chart(document.getElementById('trendChart'),{type:'bar',data:{labels:Object.keys(days),datasets:[{label:'Returns',data:Object.values(days).map(d=>d.count),backgroundColor:'rgba(79,70,229,0.7)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
 const reasons={};allReturns.forEach(r=>{const k=fmtReason(r.reason);reasons[k]=(reasons[k]||0)+1;});const sorted=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,5);if(reasonChartObj)reasonChartObj.destroy();reasonChartObj=new Chart(document.getElementById('reasonChart'),{type:'doughnut',data:{labels:sorted.map(s=>s[0]),datasets:[{data:sorted.map(s=>s[1]),backgroundColor:['#4F46E5','#059669','#D97706','#DC2626','#0284C7']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});}
 
