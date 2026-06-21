@@ -9,12 +9,8 @@ const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
 
 const emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: true,
-  auth: { user: process.env.SMTP_USER || '', pass: process.env.SMTP_PASS || '' },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000
+  service: 'gmail',
+  auth: { user: process.env.SMTP_USER || '', pass: process.env.SMTP_PASS || '' }
 });
 
 let lastEmailError = '';
