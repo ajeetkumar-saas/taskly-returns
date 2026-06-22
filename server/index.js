@@ -575,32 +575,33 @@ app.get('/api/auth/callback', async (req, res) => {
     if (digest !== hmac) return res.status(403).send('HMAC verification failed');
   }
   try {
+    // Request an EXPIRING token via authorization code grant (expiring=1)
+    const tokenParams = new URLSearchParams({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code, expiring: '1' });
     const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code })
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: tokenParams.toString()
     });
     const tokenData = await r.json();
     let access_token = tokenData.access_token;
+    const expiresAt = tokenData.expires_in ? Date.now() + (tokenData.expires_in * 1000) : 0;
     console.log('OAuth token received:', { shop, token_type: access_token?.substring(0,5), expires_in: tokenData.expires_in, has_refresh: !!tokenData.refresh_token });
 
-
-    let storeName = shop;
+    let storeName = shop, storeEmail = '';
     try {
       const shopInfo = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, {
         headers: { 'X-Shopify-Access-Token': access_token }
       });
       const shopData = await shopInfo.json();
       storeName = shopData.shop?.name || shop;
-      const storeEmail = shopData.shop?.email || '';
+      storeEmail = shopData.shop?.email || '';
+    } catch(e) {}
+    try {
       await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token, store_name, store_email) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, store_name=$3, store_email=$4',
-        [shop, access_token, storeName, storeEmail]
+        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
+        [shop, access_token, tokenData.refresh_token || '', expiresAt, storeName, storeEmail]
       );
     } catch(e) {
-      await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token) VALUES ($1,$2) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2',
-        [shop, access_token]
-      );
+      await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [access_token, shop]).catch(()=>{});
     }
 
     const plan = req.query.plan || 'starter';
@@ -1562,7 +1563,7 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.3-bigint', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.5.0-hardened', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/api/debug/reset-store', async (req, res) => {
   const { shop, key } = req.query;
@@ -1573,6 +1574,19 @@ app.get('/api/debug/reset-store', async (req, res) => {
 });
 
 app.get('/api/debug/last-exchange', (req, res) => res.json(lastExchange));
+
+app.get('/api/debug/force-refresh', async (req, res) => {
+  const { shop, key } = req.query;
+  if (key !== 'goreturn2026admin') return res.status(403).json({ error: 'invalid key' });
+  const sr = await pool.query('SELECT refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.json({ error: 'store not in db' });
+  const rt = sr.rows[0].refresh_token;
+  if (!rt) return res.json({ error: 'no refresh_token stored (token is non-expiring type - reopen embedded app)' });
+  const before = sr.rows[0].token_expires_at;
+  const fresh = await refreshAccessToken(shop, rt);
+  const after = await pool.query('SELECT token_expires_at, LEFT(refresh_token,10) AS rt FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  res.json({ refreshed: !!fresh, token_prefix: fresh ? fresh.substring(0,10) : null, expires_before: Number(before), expires_after: Number(after.rows[0].token_expires_at), new_refresh_prefix: after.rows[0].rt });
+});
 
 app.get('/api/debug/shop-check', async (req, res) => {
   const { shop } = req.query;
