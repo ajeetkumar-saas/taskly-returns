@@ -1442,7 +1442,23 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.2.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.3.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+
+app.get('/api/debug/shop-check', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.json({ error: 'shop param required' });
+  const sr = await pool.query('SELECT shop_domain, store_name, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return res.json({ error: 'Store not in DB', shop });
+  const token = (await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop])).rows[0].access_token;
+  try {
+    const r = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=3`, {
+      headers: { 'X-Shopify-Access-Token': token }
+    });
+    const status = r.status;
+    const d = await r.json();
+    res.json({ store: sr.rows[0], api_status: status, orders_count: (d.orders||[]).length, first_order: (d.orders||[])[0]?.name, token_prefix: token?.substring(0,8)+'...' });
+  } catch(e) { res.json({ store: sr.rows[0], error: e.message }); }
+});
 
 app.get('/', async (req, res) => {
   const shop = req.query.shop;
