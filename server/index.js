@@ -110,7 +110,11 @@ async function initDB() {
       store_email VARCHAR(255) DEFAULT '',
       plan VARCHAR(50) DEFAULT 'starter',
       created_at TIMESTAMP DEFAULT NOW()
-    );
+    );`);
+  // Token rotation columns (idempotent)
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS refresh_token TEXT DEFAULT ''`).catch(e=>console.log('alter refresh_token:',e.message));
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS token_expires_at BIGINT DEFAULT 0`).catch(e=>console.log('alter token_expires_at:',e.message));
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS returns (
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) DEFAULT '',
@@ -438,35 +442,81 @@ app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
   res.json({ ok: true });
 });
 
-async function getValidToken(shop) {
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
-  if (!sr.rows.length) return null;
-  return sr.rows[0].access_token;
+// Refresh an expiring offline token using the stored refresh_token
+async function refreshAccessToken(shop, refreshToken) {
+  const params = new URLSearchParams({
+    client_id: SHOPIFY_CLIENT_ID,
+    client_secret: SHOPIFY_CLIENT_SECRET,
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken
+  });
+  const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+    body: params.toString()
+  });
+  const text = await r.text();
+  let d; try { d = JSON.parse(text); } catch(e) { console.log('Refresh parse fail:', r.status, text.substring(0,150)); return null; }
+  if (d.access_token) {
+    const expiresAt = Date.now() + ((d.expires_in || 3600) * 1000);
+    await pool.query(
+      'UPDATE shopify_stores SET access_token=$1, refresh_token=$2, token_expires_at=$3 WHERE shop_domain=$4',
+      [d.access_token, d.refresh_token || refreshToken, expiresAt, shop]
+    );
+    console.log('Token refreshed:', { shop, expires_in: d.expires_in });
+    return d.access_token;
+  }
+  console.log('Refresh failed:', d);
+  return null;
 }
 
-// Token exchange - convert session token to offline access token
+// Drop-in replacement for the old DB query - returns refreshed token in same shape
+async function getStoreToken(shop) {
+  const tok = await getValidToken(shop);
+  return { rows: tok ? [{ access_token: tok }] : [] };
+}
+
+// Returns a valid (non-expired) access token, refreshing if needed
+async function getValidToken(shop) {
+  const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return null;
+  const row = sr.rows[0];
+  const expiresAt = Number(row.token_expires_at || 0);
+  // If token is expiring type and within 2 min of expiry, refresh it
+  if (row.refresh_token && expiresAt > 0 && Date.now() > (expiresAt - 120000)) {
+    const fresh = await refreshAccessToken(shop, row.refresh_token);
+    if (fresh) return fresh;
+  }
+  return row.access_token;
+}
+
+// Token exchange - convert App Bridge session token to EXPIRING offline access token
 app.post('/api/auth/token-exchange', async (req, res) => {
   const { shop, sessionToken } = req.body;
   if (!shop || !sessionToken) return res.status(400).json({ error: 'shop and sessionToken required' });
   try {
     console.log('Token exchange attempt:', { shop, token_len: sessionToken?.length });
+    const params = new URLSearchParams({
+      client_id: SHOPIFY_CLIENT_ID,
+      client_secret: SHOPIFY_CLIENT_SECRET,
+      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+      subject_token: sessionToken,
+      subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
+      requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
+      expiring: '1'
+    });
     const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: SHOPIFY_CLIENT_ID,
-        client_secret: SHOPIFY_CLIENT_SECRET,
-        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-        subject_token: sessionToken,
-        subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
-        requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token'
-      })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: params.toString()
     });
     const text = await r.text();
-    console.log('Token exchange response:', r.status, text.substring(0, 200));
+    console.log('Token exchange response:', r.status, text.substring(0, 250));
     let d;
     try { d = JSON.parse(text); } catch(e) { return res.status(400).json({ error: 'Invalid response from Shopify', status: r.status, body: text.substring(0, 200) }); }
     if (d.access_token) {
-      console.log('Token exchange SUCCESS:', { shop, token_prefix: d.access_token.substring(0,10), expires_in: d.expires_in });
+      const expiresAt = d.expires_in ? Date.now() + (d.expires_in * 1000) : 0;
+      console.log('Token exchange SUCCESS:', { shop, token_prefix: d.access_token.substring(0,10), expires_in: d.expires_in, has_refresh: !!d.refresh_token });
       let storeName = shop, storeEmail = '';
       try {
         const shopInfo = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, { headers: { 'X-Shopify-Access-Token': d.access_token } });
@@ -475,10 +525,10 @@ app.post('/api/auth/token-exchange', async (req, res) => {
         storeEmail = shopData.shop?.email || '';
       } catch(e) {}
       await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token, store_name, store_email) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, store_name=$3, store_email=$4',
-        [shop, d.access_token, storeName, storeEmail]
+        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
+        [shop, d.access_token, d.refresh_token || '', expiresAt, storeName, storeEmail]
       );
-      res.json({ ok: true, shop: storeName, expires_in: d.expires_in });
+      res.json({ ok: true, shop: storeName, expires_in: d.expires_in, expiring: !!d.refresh_token });
     } else {
       console.log('Token exchange no token:', d);
       res.status(400).json({ error: 'No access_token in response', details: d });
@@ -555,7 +605,7 @@ app.get('/api/billing/create', async (req, res) => {
   const { shop, plan } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const planData = PLANS[plan] || PLANS.starter;
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges.json`, {
@@ -586,7 +636,7 @@ app.get('/api/billing/create', async (req, res) => {
 app.get('/api/billing/confirm', async (req, res) => {
   const { shop, plan, charge_id } = req.query;
   if (!shop || !charge_id) return res.redirect(`/?shop=${shop}&connected=true`);
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.redirect('/');
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}.json`, {
@@ -622,7 +672,7 @@ app.get('/api/shopify/stores', async (req, res) => {
 app.get('/api/shopify/orders', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
@@ -637,7 +687,7 @@ app.get('/api/shopify/orders', async (req, res) => {
 app.get('/api/shopify/order-lookup', async (req, res) => {
   const { shop, order_number, email } = req.query;
   if (!shop || !order_number) return res.status(400).json({ error: 'shop and order_number required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not found' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
@@ -677,7 +727,7 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
 app.post('/api/shopify/refund', async (req, res) => {
   const { shop, order_id, amount, note } = req.body;
   if (!shop || !order_id) return res.status(400).json({ error: 'shop and order_id required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
     const calcResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}/refunds/calculate.json`, {
@@ -769,7 +819,7 @@ app.get('/api/analytics', async (req, res) => {
 app.get('/api/analytics/orders', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
@@ -834,7 +884,7 @@ app.get('/api/analytics/orders', async (req, res) => {
 app.get('/api/analytics/returns-deep', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.json({ by_product: [], by_city: [] });
   try {
     const ordersResp = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
@@ -1222,7 +1272,7 @@ app.get('/api/analytics/fraud', async (req, res) => {
 app.get('/api/analytics/pincode-risk', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.json([]);
   try {
     const ordersResp = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
@@ -1262,7 +1312,7 @@ app.get('/api/analytics/pincode-risk', async (req, res) => {
 app.post('/api/upload-image', async (req, res) => {
   const { shop, image_data, filename } = req.body;
   if (!shop || !image_data) return res.status(400).json({ error: 'shop and image_data required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
     const mutation = `mutation fileCreate($files: [FileCreateInput!]!) {
@@ -1404,7 +1454,7 @@ app.delete('/api/webhooks/:id', async (req, res) => {
 app.post('/api/shopify/tag-order', async (req, res) => {
   const { shop, order_id, tags } = req.body;
   if (!shop || !order_id) return res.status(400).json({ error: 'shop and order_id required' });
-  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}.json`, {
@@ -1493,7 +1543,7 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.3.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.0-tokenrotation', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/api/debug/reset-store', async (req, res) => {
   const { shop, key } = req.query;
@@ -1508,7 +1558,7 @@ app.get('/api/debug/shop-check', async (req, res) => {
   if (!shop) return res.json({ error: 'shop param required' });
   const sr = await pool.query('SELECT shop_domain, store_name, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.json({ error: 'Store not in DB', shop });
-  const token = (await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop])).rows[0].access_token;
+  const token = await getValidToken(shop);
   try {
     const shopR = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, {
       headers: { 'X-Shopify-Access-Token': token }
