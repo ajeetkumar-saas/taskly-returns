@@ -101,8 +101,8 @@ async function shiprocketAPI(endpoint, method, body) {
 }
 
 async function initDB() {
-  try { await pool.query('ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS refresh_token TEXT DEFAULT ""'); } catch(e) {}
-  try { await pool.query('ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMP'); } catch(e) {}
+  try { await pool.query("ALTER TABLE shopify_stores ADD COLUMN refresh_token TEXT DEFAULT ''"); } catch(e) { console.log('refresh_token column:', e.message.includes('already exists') ? 'exists' : e.message); }
+  try { await pool.query("ALTER TABLE shopify_stores ADD COLUMN token_expires_at TIMESTAMP"); } catch(e) { console.log('token_expires_at column:', e.message.includes('already exists') ? 'exists' : e.message); }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS shopify_stores (
       id SERIAL PRIMARY KEY,
