@@ -523,19 +523,6 @@ app.get('/api/auth/callback', async (req, res) => {
     let access_token = tokenData.access_token;
     console.log('OAuth token received:', { shop, token_type: access_token?.substring(0,5), expires_in: tokenData.expires_in, has_refresh: !!tokenData.refresh_token });
 
-    if (access_token && access_token.startsWith('shpat_') && !tokenData.expires_in) {
-      try {
-        const rotateR = await fetch(`https://${shop}/admin/oauth/access_token`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', subject_token: access_token, subject_token_type: 'urn:ietf:params:oauth:token-type:access_token', requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token' })
-        });
-        const rotateData = await rotateR.json();
-        if (rotateData.access_token) {
-          access_token = rotateData.access_token;
-          console.log('Token rotated:', { new_type: access_token?.substring(0,5), expires_in: rotateData.expires_in });
-        }
-      } catch(e) { console.log('Token rotation failed:', e.message); }
-    }
 
     let storeName = shop;
     try {
@@ -1549,14 +1536,6 @@ app.get('/api/debug/shop-check', async (req, res) => {
 app.get('/', async (req, res) => {
   const shop = req.query.shop;
   if (shop) {
-    try {
-      const result = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain = $1', [shop]);
-      if (!result.rows.length || !result.rows[0].access_token) {
-        return res.redirect(`/api/auth/shopify?shop=${shop}`);
-      }
-    } catch(e) {
-      return res.redirect(`/api/auth/shopify?shop=${shop}`);
-    }
     return res.sendFile(path.join(__dirname, '../client/build/index.html'));
   }
   res.sendFile(path.join(__dirname, '../client/build/landing.html'));
