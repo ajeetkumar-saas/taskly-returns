@@ -1549,19 +1549,9 @@ app.get('/api/debug/shop-check', async (req, res) => {
 app.get('/', async (req, res) => {
   const shop = req.query.shop;
   if (shop) {
-    if (req.query.connected === 'true') {
-      return res.sendFile(path.join(__dirname, '../client/build/index.html'));
-    }
     try {
       const result = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain = $1', [shop]);
       if (!result.rows.length || !result.rows[0].access_token) {
-        return res.redirect(`/api/auth/shopify?shop=${shop}`);
-      }
-      const check = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, {
-        headers: { 'X-Shopify-Access-Token': result.rows[0].access_token }
-      });
-      if (!check.ok) {
-        await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shop]);
         return res.redirect(`/api/auth/shopify?shop=${shop}`);
       }
     } catch(e) {
