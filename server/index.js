@@ -1444,6 +1444,14 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.3.0', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
+app.get('/api/debug/reset-store', async (req, res) => {
+  const { shop, key } = req.query;
+  if (key !== 'goreturn2026admin') return res.status(403).json({ error: 'invalid key' });
+  if (!shop) return res.json({ error: 'shop required' });
+  await pool.query('DELETE FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  res.json({ ok: true, deleted: shop });
+});
+
 app.get('/api/debug/shop-check', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.json({ error: 'shop param required' });
