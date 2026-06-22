@@ -1,0 +1,18 @@
+name = "GoReturn"
+client_id = "b41d7a8e87aec84daeaca932a199d3fe"
+application_url = "https://goreturn.pro"
+embedded = true
+
+[auth]
+redirect_urls = ["https://goreturn.pro/api/auth/callback"]
+
+[webhooks]
+api_version = "2025-04"
+
+  [webhooks.privacy_compliance]
+  customer_deletion_url = "https://goreturn.pro/api/webhooks/customers/redact"
+  customer_data_request_url = "https://goreturn.pro/api/webhooks/customers/data_request"
+  shop_deletion_url = "https://goreturn.pro/api/webhooks/shop/redact"
+
+[access_scopes]
+scopes = "read_customers,read_inventory,read_orders,write_orders,read_products"
