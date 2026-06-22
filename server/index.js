@@ -106,6 +106,8 @@ async function initDB() {
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) UNIQUE NOT NULL,
       access_token TEXT NOT NULL,
+      refresh_token TEXT DEFAULT '',
+      token_expires_at TIMESTAMP,
       store_name VARCHAR(255) DEFAULT '',
       store_email VARCHAR(255) DEFAULT '',
       plan VARCHAR(50) DEFAULT 'starter',
@@ -438,6 +440,28 @@ app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
   res.json({ ok: true });
 });
 
+async function getValidToken(shop) {
+  const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return null;
+  const { access_token, refresh_token, token_expires_at } = sr.rows[0];
+  if (token_expires_at && new Date(token_expires_at) < new Date() && refresh_token) {
+    try {
+      const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token })
+      });
+      const d = await r.json();
+      if (d.access_token) {
+        const expiresAt = d.expires_in ? new Date(Date.now() + d.expires_in * 1000) : null;
+        await pool.query('UPDATE shopify_stores SET access_token=$1, refresh_token=$2, token_expires_at=$3 WHERE shop_domain=$4',
+          [d.access_token, d.refresh_token || refresh_token, expiresAt, shop]);
+        return d.access_token;
+      }
+    } catch(e) { console.log('Token refresh error:', e.message); }
+  }
+  return access_token;
+}
+
 // OAuth
 app.get('/api/auth/shopify', (req, res) => {
   const { shop } = req.query;
@@ -462,7 +486,11 @@ app.get('/api/auth/callback', async (req, res) => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code })
     });
-    const { access_token } = await r.json();
+    const tokenData = await r.json();
+    const access_token = tokenData.access_token;
+    const refresh_token = tokenData.refresh_token || '';
+    const expiresAt = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
+    console.log('OAuth token received:', { shop, has_refresh: !!refresh_token, expires_in: tokenData.expires_in });
 
     let storeName = shop;
     try {
@@ -473,13 +501,13 @@ app.get('/api/auth/callback', async (req, res) => {
       storeName = shopData.shop?.name || shop;
       const storeEmail = shopData.shop?.email || '';
       await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token, store_name, store_email) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, store_name=$3, store_email=$4',
-        [shop, access_token, storeName, storeEmail]
+        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
+        [shop, access_token, refresh_token, expiresAt, storeName, storeEmail]
       );
     } catch(e) {
       await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token) VALUES ($1,$2) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2',
-        [shop, access_token]
+        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4',
+        [shop, access_token, refresh_token, expiresAt]
       );
     }
 
