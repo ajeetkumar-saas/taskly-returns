@@ -7,6 +7,7 @@ const fetch = require('node-fetch');
 const { Pool } = require('pg');
 
 let lastEmailError = '';
+let lastExchange = { stage: 'none' };
 async function sendEmail(to, subject, html) {
   if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
   try {
@@ -501,7 +502,8 @@ async function getValidToken(shop) {
 // Token exchange - convert App Bridge session token to EXPIRING offline access token
 app.post('/api/auth/token-exchange', async (req, res) => {
   const { shop, sessionToken } = req.body;
-  if (!shop || !sessionToken) return res.status(400).json({ error: 'shop and sessionToken required' });
+  lastExchange = { at: new Date().toISOString(), shop, token_len: sessionToken?.length || 0, stage: 'received' };
+  if (!shop || !sessionToken) { lastExchange.stage = 'missing-params'; return res.status(400).json({ error: 'shop and sessionToken required' }); }
   try {
     console.log('Token exchange attempt:', { shop, token_len: sessionToken?.length });
     const params = new URLSearchParams({
@@ -520,10 +522,12 @@ app.post('/api/auth/token-exchange', async (req, res) => {
     });
     const text = await r.text();
     console.log('Token exchange response:', r.status, text.substring(0, 250));
+    lastExchange.shopify_status = r.status; lastExchange.shopify_resp = text.substring(0, 250); lastExchange.stage = 'shopify-responded';
     let d;
-    try { d = JSON.parse(text); } catch(e) { return res.status(400).json({ error: 'Invalid response from Shopify', status: r.status, body: text.substring(0, 200) }); }
+    try { d = JSON.parse(text); } catch(e) { lastExchange.stage = 'parse-fail'; return res.status(400).json({ error: 'Invalid response from Shopify', status: r.status, body: text.substring(0, 200) }); }
     if (d.access_token) {
       const expiresAt = d.expires_in ? Date.now() + (d.expires_in * 1000) : 0;
+      lastExchange.stage = 'success'; lastExchange.token_prefix = d.access_token.substring(0,10); lastExchange.expires_in = d.expires_in; lastExchange.has_refresh = !!d.refresh_token;
       console.log('Token exchange SUCCESS:', { shop, token_prefix: d.access_token.substring(0,10), expires_in: d.expires_in, has_refresh: !!d.refresh_token });
       let storeName = shop, storeEmail = '';
       try {
@@ -1551,7 +1555,7 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.0-tokenrotation', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.1-debug', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/api/debug/reset-store', async (req, res) => {
   const { shop, key } = req.query;
@@ -1560,6 +1564,8 @@ app.get('/api/debug/reset-store', async (req, res) => {
   await pool.query('DELETE FROM shopify_stores WHERE shop_domain=$1', [shop]);
   res.json({ ok: true, deleted: shop });
 });
+
+app.get('/api/debug/last-exchange', (req, res) => res.json(lastExchange));
 
 app.get('/api/debug/shop-check', async (req, res) => {
   const { shop } = req.query;
