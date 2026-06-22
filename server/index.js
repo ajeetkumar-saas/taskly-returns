@@ -460,7 +460,42 @@ async function getValidToken(shop) {
   return access_token;
 }
 
-// OAuth
+// Token exchange - convert session token to offline access token
+app.post('/api/auth/token-exchange', async (req, res) => {
+  const { shop, sessionToken } = req.body;
+  if (!shop || !sessionToken) return res.status(400).json({ error: 'shop and sessionToken required' });
+  try {
+    const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: SHOPIFY_CLIENT_ID,
+        client_secret: SHOPIFY_CLIENT_SECRET,
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+        subject_token: sessionToken,
+        subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+        requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token'
+      })
+    });
+    const d = await r.json();
+    if (d.access_token) {
+      console.log('Token exchange success:', { shop, token_prefix: d.access_token.substring(0,10), expires_in: d.expires_in });
+      const shopInfo = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, { headers: { 'X-Shopify-Access-Token': d.access_token } });
+      const shopData = await shopInfo.json();
+      const storeName = shopData.shop?.name || shop;
+      const storeEmail = shopData.shop?.email || '';
+      await pool.query(
+        'INSERT INTO shopify_stores (shop_domain, access_token, store_name, store_email) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, store_name=$3, store_email=$4',
+        [shop, d.access_token, storeName, storeEmail]
+      );
+      res.json({ ok: true, shop: storeName });
+    } else {
+      console.log('Token exchange failed:', d);
+      res.status(400).json({ error: 'Token exchange failed', details: d });
+    }
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// OAuth (legacy fallback)
 app.get('/api/auth/shopify', (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
