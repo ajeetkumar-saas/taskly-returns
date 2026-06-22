@@ -16,3 +16,4 @@ api_version = "2025-04"
 
 [access_scopes]
 scopes = "read_customers,read_inventory,read_orders,write_orders,read_products"
+use_legacy_install_flow = true
