@@ -466,7 +466,7 @@ app.get('/api/auth/callback', async (req, res) => {
 
     let storeName = shop;
     try {
-      const shopInfo = await fetch(`https://${shop}/admin/api/2024-01/shop.json`, {
+      const shopInfo = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, {
         headers: { 'X-Shopify-Access-Token': access_token }
       });
       const shopData = await shopInfo.json();
@@ -507,7 +507,7 @@ app.get('/api/billing/create', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/recurring_application_charges.json`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges.json`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({
@@ -538,13 +538,13 @@ app.get('/api/billing/confirm', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.redirect('/');
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/recurring_application_charges/${charge_id}.json`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}.json`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const data = await r.json();
     const charge = data.recurring_application_charge;
     if (charge && charge.status === 'accepted') {
-      await fetch(`https://${shop}/admin/api/2024-01/recurring_application_charges/${charge_id}/activate.json`, {
+      await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}/activate.json`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
         body: JSON.stringify({ recurring_application_charge: { id: charge_id } })
@@ -574,7 +574,7 @@ app.get('/api/shopify/orders', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=50`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const d = await r.json();
@@ -589,7 +589,7 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not found' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const d = await r.json();
@@ -629,13 +629,13 @@ app.post('/api/shopify/refund', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
-    const calcResp = await fetch(`https://${shop}/admin/api/2024-01/orders/${order_id}/refunds/calculate.json`, {
+    const calcResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}/refunds/calculate.json`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({ refund: { currency: 'INR', shipping: { full_refund: false } } })
     });
     const calcData = await calcResp.json();
-    const refundResp = await fetch(`https://${shop}/admin/api/2024-01/orders/${order_id}/refunds.json`, {
+    const refundResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}/refunds.json`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({
@@ -721,7 +721,7 @@ app.get('/api/analytics/orders', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=250`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const d = await r.json();
@@ -786,7 +786,7 @@ app.get('/api/analytics/returns-deep', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.json({ by_product: [], by_city: [] });
   try {
-    const ordersResp = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=250`, {
+    const ordersResp = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const ordersData = await ordersResp.json();
@@ -1174,7 +1174,7 @@ app.get('/api/analytics/pincode-risk', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.json([]);
   try {
-    const ordersResp = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=250`, {
+    const ordersResp = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const ordersData = await ordersResp.json();
@@ -1220,7 +1220,7 @@ app.post('/api/upload-image', async (req, res) => {
         userErrors { field message }
       }
     }`;
-    const r = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/graphql.json`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({
@@ -1356,7 +1356,7 @@ app.post('/api/shopify/tag-order', async (req, res) => {
   const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/orders/${order_id}.json`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}.json`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
       body: JSON.stringify({ order: { id: order_id, tags: tags || 'return-requested' } })
@@ -1459,7 +1459,7 @@ app.get('/api/debug/shop-check', async (req, res) => {
   if (!sr.rows.length) return res.json({ error: 'Store not in DB', shop });
   const token = (await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop])).rows[0].access_token;
   try {
-    const r = await fetch(`https://${shop}/admin/api/2024-01/orders.json?status=any&limit=3`, {
+    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=3`, {
       headers: { 'X-Shopify-Access-Token': token }
     });
     const status = r.status;
@@ -1479,7 +1479,7 @@ app.get('/', async (req, res) => {
       if (!result.rows.length || !result.rows[0].access_token) {
         return res.redirect(`/api/auth/shopify?shop=${shop}`);
       }
-      const check = await fetch(`https://${shop}/admin/api/2024-01/shop.json`, {
+      const check = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, {
         headers: { 'X-Shopify-Access-Token': result.rows[0].access_token }
       });
       if (!check.ok) {
