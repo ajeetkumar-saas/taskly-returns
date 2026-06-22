@@ -56,6 +56,14 @@ function returnStatusEmail(customerName, orderId, status, amount) {
 
 const app = express();
 app.use(cors());
+// Allow embedding inside Shopify Admin iframe (required for App Bridge)
+app.use((req, res, next) => {
+  const shop = req.query.shop;
+  const allowShop = shop ? `https://${shop}` : 'https://*.myshopify.com';
+  res.setHeader('Content-Security-Policy', `frame-ancestors ${allowShop} https://admin.shopify.com;`);
+  res.removeHeader('X-Frame-Options');
+  next();
+});
 app.use(express.json({
   limit: '10mb',
   verify: (req, res, buf) => { req.rawBody = buf; }
