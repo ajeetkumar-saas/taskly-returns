@@ -693,20 +693,24 @@ UPI</textarea></div>
 </div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createReturn()"><i class="fas fa-check"></i> Submit</button></div></div></div>
 
 <script>
-async function exchangeSessionToken(){
+async function exchangeSessionToken(attempt){
+  attempt=attempt||0;
   const params=new URLSearchParams(location.search);
   const shop=params.get('shop');
-  if(!shop||!window.shopify)return;
+  if(!shop)return;
+  if(!window.shopify){if(attempt<10)setTimeout(()=>exchangeSessionToken(attempt+1),500);else console.log('App Bridge not available - not embedded');return;}
   try{
     const token=await shopify.idToken();
+    console.log('Session token:',token?'got '+token.length+'chars':'null');
     if(token){
       const r=await fetch('/api/auth/token-exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,sessionToken:token})});
       const d=await r.json();
-      if(d.ok)console.log('Token exchanged for',shop);
+      console.log('Exchange:',JSON.stringify(d));
+      if(d.ok)location.reload();
     }
-  }catch(e){console.log('Token exchange skip:',e.message);}
+  }catch(e){console.log('Exchange error:',e.message);}
 }
-exchangeSessionToken();
+exchangeSessionToken(0);
 
 let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return',currentPlan='free',globalDate='7',exDate='all';
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
