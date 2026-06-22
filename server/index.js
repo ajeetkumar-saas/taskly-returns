@@ -1459,12 +1459,17 @@ app.get('/api/debug/shop-check', async (req, res) => {
   if (!sr.rows.length) return res.json({ error: 'Store not in DB', shop });
   const token = (await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop])).rows[0].access_token;
   try {
-    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=3`, {
+    const shopR = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, {
       headers: { 'X-Shopify-Access-Token': token }
     });
-    const status = r.status;
-    const d = await r.json();
-    res.json({ store: sr.rows[0], api_status: status, orders_count: (d.orders||[]).length, first_order: (d.orders||[])[0]?.name, token_prefix: token?.substring(0,8)+'...' });
+    const shopStatus = shopR.status;
+    const shopBody = await shopR.text();
+    const ordR = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=3`, {
+      headers: { 'X-Shopify-Access-Token': token }
+    });
+    const ordStatus = ordR.status;
+    const ordBody = await ordR.text();
+    res.json({ store: sr.rows[0], shop_api: shopStatus, shop_resp: shopBody.substring(0,200), orders_api: ordStatus, orders_resp: ordBody.substring(0,200), token_prefix: token?.substring(0,12)+'...' });
   } catch(e) { res.json({ store: sr.rows[0], error: e.message }); }
 });
 
