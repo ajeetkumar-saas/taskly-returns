@@ -120,9 +120,10 @@ async function initDB() {
       plan VARCHAR(50) DEFAULT 'starter',
       created_at TIMESTAMP DEFAULT NOW()
     );`);
-  // Token rotation columns (idempotent)
+  // Token rotation columns (idempotent). Force token_expires_at to BIGINT (epoch ms).
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS refresh_token TEXT DEFAULT ''`).catch(e=>console.log('alter refresh_token:',e.message));
-  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS token_expires_at BIGINT DEFAULT 0`).catch(e=>console.log('alter token_expires_at:',e.message));
+  await pool.query(`ALTER TABLE shopify_stores DROP COLUMN IF EXISTS token_expires_at`).catch(e=>console.log('drop token_expires_at:',e.message));
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN token_expires_at BIGINT DEFAULT 0`).catch(e=>console.log('add token_expires_at:',e.message));
   await pool.query(`
     CREATE TABLE IF NOT EXISTS returns (
       id SERIAL PRIMARY KEY,
@@ -1561,7 +1562,7 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.2-dbfix', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.3-bigint', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/api/debug/reset-store', async (req, res) => {
   const { shop, key } = req.query;
