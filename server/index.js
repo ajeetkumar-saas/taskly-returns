@@ -536,10 +536,16 @@ app.post('/api/auth/token-exchange', async (req, res) => {
         storeName = shopData.shop?.name || shop;
         storeEmail = shopData.shop?.email || '';
       } catch(e) {}
-      await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
-        [shop, d.access_token, d.refresh_token || '', expiresAt, storeName, storeEmail]
-      );
+      try {
+        await pool.query(
+          'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
+          [shop, d.access_token, d.refresh_token || '', expiresAt, storeName, storeEmail]
+        );
+        lastExchange.db = 'saved';
+      } catch(dbErr) {
+        lastExchange.db = 'FAILED: ' + dbErr.message;
+        try { await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [d.access_token, shop]); lastExchange.db += ' | fallback-saved'; } catch(e2) { lastExchange.db += ' | fallback-failed:'+e2.message; }
+      }
       res.json({ ok: true, shop: storeName, expires_in: d.expires_in, expiring: !!d.refresh_token });
     } else {
       console.log('Token exchange no token:', d);
@@ -1555,7 +1561,7 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.1-debug', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.4.2-dbfix', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/api/debug/reset-store', async (req, res) => {
   const { shop, key } = req.query;
