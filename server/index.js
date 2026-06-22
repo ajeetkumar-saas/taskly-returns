@@ -558,7 +558,7 @@ app.get('/api/auth/callback', async (req, res) => {
 
     const plan = req.query.plan || 'starter';
     if (plan === 'free_trial' || plan === 'free') {
-      res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
+      res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com','')}/apps/goreturn`);
     } else {
       res.redirect(`/api/billing/create?shop=${shop}&plan=${plan}`);
     }
@@ -598,7 +598,7 @@ app.get('/api/billing/create', async (req, res) => {
     if (charge && charge.confirmation_url) {
       res.redirect(charge.confirmation_url);
     } else {
-      res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
+      res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com','')}/apps/goreturn`);
     }
   } catch(e) {
     res.redirect(`/?shop=${shop}&connected=true&billing=error`);
