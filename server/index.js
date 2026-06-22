@@ -457,7 +457,7 @@ app.post('/api/auth/token-exchange', async (req, res) => {
         client_secret: SHOPIFY_CLIENT_SECRET,
         grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
         subject_token: sessionToken,
-        subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+        subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
         requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token'
       })
     });
