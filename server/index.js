@@ -439,25 +439,9 @@ app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
 });
 
 async function getValidToken(shop) {
-  const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const sr = await pool.query('SELECT access_token FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return null;
-  const { access_token, refresh_token, token_expires_at } = sr.rows[0];
-  if (token_expires_at && new Date(token_expires_at) < new Date() && refresh_token) {
-    try {
-      const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token })
-      });
-      const d = await r.json();
-      if (d.access_token) {
-        const expiresAt = d.expires_in ? new Date(Date.now() + d.expires_in * 1000) : null;
-        await pool.query('UPDATE shopify_stores SET access_token=$1, refresh_token=$2, token_expires_at=$3 WHERE shop_domain=$4',
-          [d.access_token, d.refresh_token || refresh_token, expiresAt, shop]);
-        return d.access_token;
-      }
-    } catch(e) { console.log('Token refresh error:', e.message); }
-  }
-  return access_token;
+  return sr.rows[0].access_token;
 }
 
 // Token exchange - convert session token to offline access token
@@ -465,6 +449,7 @@ app.post('/api/auth/token-exchange', async (req, res) => {
   const { shop, sessionToken } = req.body;
   if (!shop || !sessionToken) return res.status(400).json({ error: 'shop and sessionToken required' });
   try {
+    console.log('Token exchange attempt:', { shop, token_len: sessionToken?.length });
     const r = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -476,23 +461,29 @@ app.post('/api/auth/token-exchange', async (req, res) => {
         requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token'
       })
     });
-    const d = await r.json();
+    const text = await r.text();
+    console.log('Token exchange response:', r.status, text.substring(0, 200));
+    let d;
+    try { d = JSON.parse(text); } catch(e) { return res.status(400).json({ error: 'Invalid response from Shopify', status: r.status, body: text.substring(0, 200) }); }
     if (d.access_token) {
-      console.log('Token exchange success:', { shop, token_prefix: d.access_token.substring(0,10), expires_in: d.expires_in });
-      const shopInfo = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, { headers: { 'X-Shopify-Access-Token': d.access_token } });
-      const shopData = await shopInfo.json();
-      const storeName = shopData.shop?.name || shop;
-      const storeEmail = shopData.shop?.email || '';
+      console.log('Token exchange SUCCESS:', { shop, token_prefix: d.access_token.substring(0,10), expires_in: d.expires_in });
+      let storeName = shop, storeEmail = '';
+      try {
+        const shopInfo = await fetch(`https://${shop}/admin/api/2025-04/shop.json`, { headers: { 'X-Shopify-Access-Token': d.access_token } });
+        const shopData = await shopInfo.json();
+        storeName = shopData.shop?.name || shop;
+        storeEmail = shopData.shop?.email || '';
+      } catch(e) {}
       await pool.query(
         'INSERT INTO shopify_stores (shop_domain, access_token, store_name, store_email) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, store_name=$3, store_email=$4',
         [shop, d.access_token, storeName, storeEmail]
       );
-      res.json({ ok: true, shop: storeName });
+      res.json({ ok: true, shop: storeName, expires_in: d.expires_in });
     } else {
-      console.log('Token exchange failed:', d);
-      res.status(400).json({ error: 'Token exchange failed', details: d });
+      console.log('Token exchange no token:', d);
+      res.status(400).json({ error: 'No access_token in response', details: d });
     }
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('Token exchange error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // OAuth (legacy fallback)
