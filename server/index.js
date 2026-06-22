@@ -101,15 +101,11 @@ async function shiprocketAPI(endpoint, method, body) {
 }
 
 async function initDB() {
-  try { await pool.query("ALTER TABLE shopify_stores ADD COLUMN refresh_token TEXT DEFAULT ''"); } catch(e) { console.log('refresh_token column:', e.message.includes('already exists') ? 'exists' : e.message); }
-  try { await pool.query("ALTER TABLE shopify_stores ADD COLUMN token_expires_at TIMESTAMP"); } catch(e) { console.log('token_expires_at column:', e.message.includes('already exists') ? 'exists' : e.message); }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS shopify_stores (
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) UNIQUE NOT NULL,
       access_token TEXT NOT NULL,
-      refresh_token TEXT DEFAULT '',
-      token_expires_at TIMESTAMP,
       store_name VARCHAR(255) DEFAULT '',
       store_email VARCHAR(255) DEFAULT '',
       plan VARCHAR(50) DEFAULT 'starter',
@@ -490,9 +486,7 @@ app.get('/api/auth/callback', async (req, res) => {
     });
     const tokenData = await r.json();
     const access_token = tokenData.access_token;
-    const refresh_token = tokenData.refresh_token || '';
-    const expiresAt = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
-    console.log('OAuth token received:', { shop, has_refresh: !!refresh_token, expires_in: tokenData.expires_in });
+    console.log('OAuth token received:', { shop, expires_in: tokenData.expires_in, has_refresh: !!tokenData.refresh_token });
 
     let storeName = shop;
     try {
@@ -503,13 +497,13 @@ app.get('/api/auth/callback', async (req, res) => {
       storeName = shopData.shop?.name || shop;
       const storeEmail = shopData.shop?.email || '';
       await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
-        [shop, access_token, refresh_token, expiresAt, storeName, storeEmail]
+        'INSERT INTO shopify_stores (shop_domain, access_token, store_name, store_email) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, store_name=$3, store_email=$4',
+        [shop, access_token, storeName, storeEmail]
       );
     } catch(e) {
       await pool.query(
-        'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at) VALUES ($1,$2,$3,$4) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4',
-        [shop, access_token, refresh_token, expiresAt]
+        'INSERT INTO shopify_stores (shop_domain, access_token) VALUES ($1,$2) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2',
+        [shop, access_token]
       );
     }
 
