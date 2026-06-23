@@ -121,7 +121,6 @@ tbody tr:hover{background:var(--gray-50)}
     <div class="nav-item" onclick="showPage('orders')"><i class="fas fa-shopping-bag"></i> Orders</div>
     <div class="nav-label">Insights</div>
     <div class="nav-item" onclick="showPage('analytics')"><i class="fas fa-chart-line"></i> Analytics</div>
-    <div class="nav-item" onclick="showPage('store-analytics')"><i class="fas fa-store-alt"></i> Store Analytics</div>
     <div class="nav-item" onclick="showPage('export')"><i class="fas fa-download"></i> Export Data</div>
     <div class="nav-item" onclick="showPage('fraud')"><i class="fas fa-user-shield"></i> Fraud Detection</div>
     <div class="nav-item" onclick="showPage('pincode-risk')"><i class="fas fa-map-marked-alt"></i> Pincode Risk</div>
@@ -701,12 +700,15 @@ async function exchangeSessionToken(attempt){
   if(!window.shopify){if(attempt<10)setTimeout(()=>exchangeSessionToken(attempt+1),500);else console.log('App Bridge not available - not embedded');return;}
   try{
     const token=await shopify.idToken();
-    console.log('Session token:',token?'got '+token.length+'chars':'null');
     if(token){
       const r=await fetch('/api/auth/token-exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,sessionToken:token})});
       const d=await r.json();
-      console.log('Exchange:',JSON.stringify(d));
-      if(d.ok)location.reload();
+      // Refresh data ONCE after first successful exchange (no reload loop / no screen shake)
+      if(d.ok && !sessionStorage.getItem('gr_token_ready')){
+        sessionStorage.setItem('gr_token_ready','1');
+        if(typeof loadStores==='function')loadStores();
+        if(typeof loadReturns==='function')loadReturns().then(()=>{if(typeof renderDashCharts==='function')renderDashCharts();});
+      }
     }
   }catch(e){console.log('Exchange error:',e.message);}
 }
