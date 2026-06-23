@@ -210,10 +210,12 @@ async function initDB() {
       role VARCHAR(50) DEFAULT 'viewer',
       status VARCHAR(20) DEFAULT 'invited',
       session_token TEXT DEFAULT '',
+      invite_token TEXT DEFAULT '',
       last_login TIMESTAMP,
       created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE(shop_domain, email)
     )`);
+  await pool.query(`ALTER TABLE team_members ADD COLUMN IF NOT EXISTS invite_token TEXT DEFAULT ''`).catch(()=>{});
     await pool.query(`CREATE TABLE IF NOT EXISTS activity_log (
       id SERIAL PRIMARY KEY,
       user_name VARCHAR(255) DEFAULT '',
@@ -254,6 +256,18 @@ async function authenticateRequest(req, res, next) {
 }
 
 const ALLOWED_ADMIN_EMAIL = 'ajeetkumar.saas@gmail.com';
+
+// Send an alert email to the app owner/admin (install, uninstall, etc.)
+async function notifyAdmin(subject, bodyHtml) {
+  try {
+    await sendEmail(ALLOWED_ADMIN_EMAIL,
+      subject,
+      `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+        <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">GoReturn Admin Alert</h2></div>
+        <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;color:#374151;font-size:14px">${bodyHtml}</div>
+      </div>`);
+  } catch(e) { console.log('notifyAdmin error:', e.message); }
+}
 
 // Admin Registration (locked to owner email only)
 app.post('/api/admin/register', async (req, res) => {
@@ -419,20 +433,50 @@ app.get('/api/team', authenticateRequest, async (req, res) => {
 
 app.post('/api/team', authenticateRequest, async (req, res) => {
   if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can add team members' });
-  const { name, email, password, role, shop_domain } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, password required' });
+  const { name, email, role, shop_domain } = req.body;
+  if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
   try {
-    const hash = hashPassword(password);
+    const inviteToken = crypto.randomBytes(24).toString('hex');
     const r = await pool.query(
-      'INSERT INTO team_members (shop_domain, name, email, password_hash, role, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, status',
-      [shop_domain || '', name, email, hash, role || 'viewer', 'active']
+      'INSERT INTO team_members (shop_domain, name, email, password_hash, role, status, invite_token) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, name, email, role, status',
+      [shop_domain || '', name, email, '', role || 'viewer', 'invited', inviteToken]
     );
-    await logActivity(req, 'Team Member Added', `${name} (${email}) as ${role}`);
-    res.json(r.rows[0]);
+    const inviteLink = `${APP_URL}/set-password.html?token=${inviteToken}`;
+    const emailed = await sendEmail(email, 'You have been invited to GoReturn',
+      `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:24px">
+        <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">GoReturn</h2></div>
+        <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px">
+          <p style="color:#374151;font-size:14px">Hi ${name},</p>
+          <p style="color:#6B7280;font-size:14px">You've been invited to join the GoReturn team as <strong>${role || 'viewer'}</strong>. Click below to set your password and activate your account.</p>
+          <div style="text-align:center;margin:24px 0"><a href="${inviteLink}" style="background:#4F46E5;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;display:inline-block">Set Your Password</a></div>
+          <p style="color:#9CA3AF;font-size:12px">Or copy this link: ${inviteLink}</p>
+        </div>
+      </div>`);
+    await logActivity(req, 'Team Member Invited', `${name} (${email}) as ${role}`);
+    res.json({ ...r.rows[0], emailed, invite_link: inviteLink });
   } catch(e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Member with this email already exists' });
     res.status(500).json({ error: e.message });
   }
+});
+
+// Validate invite token (for set-password page)
+app.get('/api/team/invite/:token', async (req, res) => {
+  const r = await pool.query('SELECT name, email, role FROM team_members WHERE invite_token=$1 AND invite_token != $2', [req.params.token, '']);
+  if (!r.rows.length) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  res.json(r.rows[0]);
+});
+
+// Invited member sets their own password
+app.post('/api/team/set-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'token and password required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const r = await pool.query('SELECT id, email FROM team_members WHERE invite_token=$1 AND invite_token != $2', [token, '']);
+  if (!r.rows.length) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  await pool.query('UPDATE team_members SET password_hash=$1, status=$2, invite_token=$3 WHERE id=$4',
+    [hashPassword(password), 'active', '', r.rows[0].id]);
+  res.json({ ok: true, email: r.rows[0].email });
 });
 
 app.patch('/api/team/:id', authenticateRequest, async (req, res) => {
@@ -537,12 +581,18 @@ app.post('/api/auth/token-exchange', async (req, res) => {
         storeName = shopData.shop?.name || shop;
         storeEmail = shopData.shop?.email || '';
       } catch(e) {}
+      // Detect NEW install (store not already in DB) for install alert email
+      let isNewInstall = false;
+      try { const ex = await pool.query('SELECT 1 FROM shopify_stores WHERE shop_domain=$1', [shop]); isNewInstall = ex.rows.length === 0; } catch(e) {}
       try {
         await pool.query(
           'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
           [shop, d.access_token, d.refresh_token || '', expiresAt, storeName, storeEmail]
         );
         lastExchange.db = 'saved';
+        if (isNewInstall) {
+          notifyAdmin('🎉 New GoReturn Install', `<p><strong>${storeName}</strong> (${shop}) just installed GoReturn.</p><p>Store email: ${storeEmail || 'N/A'}</p><p>Time: ${new Date().toUTCString()}</p>`);
+        }
       } catch(dbErr) {
         lastExchange.db = 'FAILED: ' + dbErr.message;
         try { await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [d.access_token, shop]); lastExchange.db += ' | fallback-saved'; } catch(e2) { lastExchange.db += ' | fallback-failed:'+e2.message; }
@@ -1563,7 +1613,21 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.5.0-hardened', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+// App uninstalled webhook — alert admin + clean up store so reinstall is detected as new
+app.post('/api/webhooks/app-uninstalled', async (req, res) => {
+  if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
+  const shopDomain = req.get('X-Shopify-Shop-Domain') || req.body?.myshopify_domain || req.body?.domain;
+  console.log('App uninstalled webhook:', shopDomain);
+  if (shopDomain) {
+    let storeName = shopDomain;
+    try { const s = await pool.query('SELECT store_name FROM shopify_stores WHERE shop_domain=$1', [shopDomain]); if (s.rows[0]?.store_name) storeName = s.rows[0].store_name; } catch(e) {}
+    try { await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
+    notifyAdmin('⚠️ GoReturn Uninstalled', `<p><strong>${storeName}</strong> (${shopDomain}) just <strong>uninstalled</strong> GoReturn.</p><p>Time: ${new Date().toUTCString()}</p><p>Their stored data has been removed. A reinstall will be detected as a new install.</p>`);
+  }
+  res.status(200).json({ ok: true });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
 app.get('/api/debug/reset-store', async (req, res) => {
   const { shop, key } = req.query;

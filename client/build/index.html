@@ -832,8 +832,19 @@ async function loadAllStores(){
     <td><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span></td>
     <td><strong>${retCounts[x.shop_domain]||0}</strong></td>
     <td style="font-size:11px">${fmtDate(x.created_at)}</td>
-    <td><select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select></td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-secondary" style="padding:3px 8px;font-size:11px;margin-right:6px" onclick="viewStoreData('${x.shop_domain}')"><i class="fas fa-eye"></i> View</button>
+      <select onchange="changePlan('${x.shop_domain}',this.value)" style="padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:11px"><option value="free" ${x.plan==='free'?'selected':''}>Free</option><option value="starter" ${x.plan==='starter'?'selected':''}>Starter</option><option value="growth" ${x.plan==='growth'?'selected':''}>Growth</option><option value="pro" ${x.plan==='pro'?'selected':''}>Pro</option></select>
+    </td>
   </tr>`).join('');
+}
+
+// Click a store -> open its data in the Store Data tab
+function viewStoreData(shop){
+  showAdminTab('storedata');
+  const sel=document.getElementById('storeDataFilter');
+  if(sel){sel.value=shop;}
+  loadStoreData();
 }
 
 async function loadStoreData(){
@@ -1009,8 +1020,8 @@ function showTeamModal(){
       <h3 style="font-size:18px;font-weight:700;margin-bottom:20px"><i class="fas fa-user-plus" style="color:#4F46E5;margin-right:8px"></i>Add Team Member</h3>
       <div class="fg" style="margin-bottom:14px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Full Name</label><input type="text" id="tmName" placeholder="Team member name" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"></div>
       <div class="fg" style="margin-bottom:14px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Email</label><input type="email" id="tmEmail" placeholder="email@example.com" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"></div>
-      <div class="fg" style="margin-bottom:14px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Password</label><input type="text" id="tmPass" placeholder="Set login password" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"></div>
       <div class="fg" style="margin-bottom:20px"><label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Role</label><select id="tmRole" style="width:100%;padding:10px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:14px"><option value="viewer">Viewer (View Only)</option><option value="admin">Admin (Manage Returns & Settings)</option></select></div>
+      <p style="font-size:12px;color:#6B7280;margin-bottom:18px"><i class="fas fa-envelope" style="margin-right:6px"></i>An invite email will be sent. They'll set their own password.</p>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button onclick="document.getElementById('teamModal').remove()" style="padding:10px 20px;border:1px solid #D1D5DB;border-radius:8px;background:white;cursor:pointer;font-size:14px;font-family:inherit">Cancel</button>
         <button onclick="addTeamMember()" style="padding:10px 20px;background:#4F46E5;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit"><i class="fas fa-plus"></i> Add Member</button>
@@ -1023,15 +1034,14 @@ function showTeamModal(){
 async function addTeamMember(){
   const name=document.getElementById('tmName').value.trim();
   const email=document.getElementById('tmEmail').value.trim();
-  const password=document.getElementById('tmPass').value;
   const role=document.getElementById('tmRole').value;
-  if(!name||!email||!password){showAlert('All fields are required','error');return;}
+  if(!name||!email){showAlert('Name and email are required','error');return;}
   try{
-    const r=await fetch('/api/team',{method:'POST',headers:{'Content-Type':'application/json',...getAuthHeaders()},body:JSON.stringify({name,email,password,role,shop_domain:currentShop})});
+    const r=await fetch('/api/team',{method:'POST',headers:{'Content-Type':'application/json',...getAuthHeaders()},body:JSON.stringify({name,email,role,shop_domain:currentShop})});
     const d=await r.json();
     if(!r.ok)throw new Error(d.error);
     document.getElementById('teamModal').remove();
-    showAlert('Team member added! They can login at /login','success');
+    showAlert(d.emailed?'Invite email sent to '+email:'Member added (email failed — share invite link manually)','success');
     loadTeam();
   }catch(e){showAlert(e.message,'error');}
 }

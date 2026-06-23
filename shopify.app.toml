@@ -9,6 +9,10 @@ redirect_urls = ["https://goreturn.pro/api/auth/callback"]
 [webhooks]
 api_version = "2025-04"
 
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "https://goreturn.pro/api/webhooks/app-uninstalled"
+
   [webhooks.privacy_compliance]
   customer_deletion_url = "https://goreturn.pro/api/webhooks/customers/redact"
   customer_data_request_url = "https://goreturn.pro/api/webhooks/customers/data_request"
