@@ -524,6 +524,20 @@ async function refreshAccessToken(shop, refreshToken) {
   return null;
 }
 
+// Auto-fix: when API returns 401, try refreshing the token
+async function attemptReauth(shop) {
+  const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!sr.rows.length) return null;
+  const row = sr.rows[0];
+  if (row.refresh_token) {
+    console.log(`attemptReauth: trying refresh for ${shop}`);
+    const fresh = await refreshAccessToken(shop, row.refresh_token);
+    if (fresh) return fresh;
+  }
+  console.log(`attemptReauth: no refresh token for ${shop}, needs App Bridge re-auth`);
+  return null;
+}
+
 // Drop-in replacement for the old DB query - returns refreshed token in same shape
 async function getStoreToken(shop) {
   const tok = await getValidToken(shop);
@@ -536,16 +550,16 @@ async function getValidToken(shop) {
   if (!sr.rows.length) return null;
   const row = sr.rows[0];
   if (!row.access_token) return null;
-  // If token is old non-expiring type (shpat_) with no refresh token, it won't work
-  if (row.access_token?.startsWith('shpat_') && !row.refresh_token) {
-    console.log(`Store ${shop} has non-expiring shpat_ token without refresh - needs re-auth via App Bridge`);
-    return null;
-  }
   const expiresAt = Number(row.token_expires_at || 0);
-  // If token is expiring type and within 2 min of expiry, refresh it
+  // If token has expiry info and is within 2 min of expiry, refresh it
   if (row.refresh_token && expiresAt > 0 && Date.now() > (expiresAt - 120000)) {
     const fresh = await refreshAccessToken(shop, row.refresh_token);
     if (fresh) return fresh;
+  }
+  // If token has expiry info and is already expired but no refresh token, it's dead
+  if (expiresAt > 0 && Date.now() > expiresAt && !row.refresh_token) {
+    console.log(`Store ${shop} token expired with no refresh token`);
+    return null;
   }
   return row.access_token;
 }
@@ -757,7 +771,13 @@ app.get('/api/shopify/orders', async (req, res) => {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     if (r.status === 401 || r.status === 403) {
-      await pool.query("UPDATE shopify_stores SET access_token='', refresh_token='', token_expires_at=0 WHERE shop_domain=$1", [shop]);
+      const reauth = await attemptReauth(shop);
+      if (reauth) {
+        const retry = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
+          headers: { 'X-Shopify-Access-Token': reauth }
+        });
+        if (retry.ok) { const rd = await retry.json(); return res.json(rd.orders || []); }
+      }
       return res.status(503).json({ error: 'Store connection expired. Open GoReturn in Shopify Admin to reconnect.' });
     }
     const d = await r.json();
@@ -776,9 +796,32 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     if (r.status === 401 || r.status === 403) {
-      // Token is invalid/expired — clear it so next App Bridge open will fix it
-      await pool.query("UPDATE shopify_stores SET access_token='', refresh_token='', token_expires_at=0 WHERE shop_domain=$1", [shop]);
-      return res.status(503).json({ error: 'Store connection expired. The store owner needs to open GoReturn app in Shopify Admin to reconnect.' });
+      // Token invalid — try to fix it automatically via token re-fetch from OAuth
+      const reauth = await attemptReauth(shop);
+      if (reauth) {
+        // Retry the request with new token
+        const retry = await fetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
+          headers: { 'X-Shopify-Access-Token': reauth }
+        });
+        if (retry.ok) {
+          const retryData = await retry.json();
+          const retryOrders = retryData.orders || [];
+          if (!retryOrders.length) return res.status(404).json({ error: 'Order not found' });
+          const order = retryOrders[0];
+          if (email && order.email && order.email.toLowerCase() !== email.toLowerCase()) {
+            return res.status(403).json({ error: 'Email does not match order' });
+          }
+          return res.json({
+            id: order.id, order_number: order.name, email: order.email,
+            customer_name: order.customer ? `${order.customer.first_name} ${order.customer.last_name}` : '',
+            phone: order.phone || order.customer?.phone || '', total_price: order.total_price,
+            currency: order.currency, financial_status: order.financial_status,
+            fulfillment_status: order.fulfillment_status, created_at: order.created_at,
+            line_items: (order.line_items || []).map(li => ({ id: li.id, title: li.title, sku: li.sku, quantity: li.quantity, price: li.price, variant_title: li.variant_title }))
+          });
+        }
+      }
+      return res.status(503).json({ error: 'Store connection expired. Please contact the store owner.' });
     }
     const d = await r.json();
     const orders = d.orders || [];
