@@ -535,6 +535,11 @@ async function getValidToken(shop) {
   const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return null;
   const row = sr.rows[0];
+  // If token is old non-expiring type (shpat_) with no refresh token, it won't work
+  if (row.access_token?.startsWith('shpat_') && !row.refresh_token) {
+    console.log(`Store ${shop} has non-expiring shpat_ token without refresh - needs re-auth via App Bridge`);
+    return null;
+  }
   const expiresAt = Number(row.token_expires_at || 0);
   // If token is expiring type and within 2 min of expiry, refresh it
   if (row.refresh_token && expiresAt > 0 && Date.now() > (expiresAt - 120000)) {
@@ -655,8 +660,10 @@ app.get('/api/auth/callback', async (req, res) => {
     }
 
     const plan = req.query.plan || 'starter';
+    // Always redirect into Shopify Admin so App Bridge loads and token exchange happens
+    const adminAppUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com','')}/apps/goreturn`;
     if (plan === 'free_trial' || plan === 'free') {
-      res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
+      res.redirect(adminAppUrl);
     } else {
       res.redirect(`/api/billing/create?shop=${shop}&plan=${plan}`);
     }
@@ -743,11 +750,15 @@ app.get('/api/shopify/orders', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
-  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
+  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. Open GoReturn in Shopify Admin first.' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
+    if (r.status === 401 || r.status === 403) {
+      await pool.query('UPDATE shopify_stores SET access_token=NULL, refresh_token=NULL, token_expires_at=0 WHERE shop_domain=$1', [shop]);
+      return res.status(503).json({ error: 'Store connection expired. Open GoReturn in Shopify Admin to reconnect.' });
+    }
     const d = await r.json();
     res.json(d.orders || []);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -758,11 +769,16 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
   const { shop, order_number, email } = req.query;
   if (!shop || !order_number) return res.status(400).json({ error: 'shop and order_number required' });
   const sr = await getStoreToken(shop);
-  if (!sr.rows.length) return res.status(404).json({ error: 'Store not found' });
+  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. The store owner needs to open GoReturn app in Shopify Admin first.' });
   try {
     const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
+    if (r.status === 401 || r.status === 403) {
+      // Token is invalid/expired — clear it so next App Bridge open will fix it
+      await pool.query('UPDATE shopify_stores SET access_token=NULL, refresh_token=NULL, token_expires_at=0 WHERE shop_domain=$1', [shop]);
+      return res.status(503).json({ error: 'Store connection expired. The store owner needs to open GoReturn app in Shopify Admin to reconnect.' });
+    }
     const d = await r.json();
     const orders = d.orders || [];
     if (!orders.length) return res.status(404).json({ error: 'Order not found' });
