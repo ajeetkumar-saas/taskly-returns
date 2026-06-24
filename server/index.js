@@ -176,6 +176,8 @@ async function initDB() {
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_password TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_token TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_connected BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_auto_pickup BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_pickup_location TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS portal_color VARCHAR(20) DEFAULT '#4F46E5'`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS portal_banner TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS return_window INTEGER DEFAULT 14`);
@@ -1247,6 +1249,15 @@ app.patch('/api/returns/:id', async (req, res) => {
   }
   if (status) logActivity(req, 'Return Status Changed', `#${req.params.id} → ${status} (${ret.customer_name}, ${ret.order_id})`);
   if (archived) logActivity(req, 'Return Archived', `#${req.params.id} (${ret.customer_name})`);
+  // Auto-pickup: if approved & store has Shiprocket auto-pickup enabled
+  if (status === 'approved' && ret.type !== 'exchange' && ret.pickup_status !== 'pickup_scheduled') {
+    try {
+      const st = await pool.query('SELECT shiprocket_connected, shiprocket_auto_pickup FROM shopify_stores WHERE shop_domain=$1', [ret.shop_domain]);
+      if (st.rows[0]?.shiprocket_connected && st.rows[0]?.shiprocket_auto_pickup) {
+        createShiprocketPickup(ret.shop_domain, ret).catch(e => console.log('Auto-pickup failed:', e.message));
+      }
+    } catch(e) {}
+  }
   res.json(ret);
 });
 
@@ -1290,9 +1301,32 @@ app.post('/api/shiprocket/disconnect', async (req, res) => {
 app.get('/api/shiprocket/status', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
-  const r = await pool.query('SELECT shiprocket_connected, shiprocket_email FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  const r = await pool.query('SELECT shiprocket_connected, shiprocket_email, shiprocket_auto_pickup, shiprocket_pickup_location FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!r.rows.length) return res.json({ connected: false });
-  res.json({ connected: r.rows[0].shiprocket_connected, email: r.rows[0].shiprocket_email });
+  res.json({ connected: r.rows[0].shiprocket_connected, email: r.rows[0].shiprocket_email, auto_pickup: r.rows[0].shiprocket_auto_pickup, pickup_location: r.rows[0].shiprocket_pickup_location });
+});
+
+// Fetch the seller's Shiprocket pickup locations (return destinations)
+app.get('/api/shiprocket/pickup-locations', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  try {
+    const d = await sellerShiprocketAPI(shop, '/settings/company/pickup', 'GET');
+    const locations = (d?.data?.shipping_address || []).map(l => ({
+      id: l.pickup_location, name: l.pickup_location, address: l.address, city: l.city, state: l.state, pincode: l.pin_code
+    }));
+    res.json({ locations });
+  } catch(e) { res.json({ locations: [], error: e.message }); }
+});
+
+// Save Shiprocket automation settings
+app.post('/api/shiprocket/settings', async (req, res) => {
+  const { shop, auto_pickup, pickup_location } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET shiprocket_auto_pickup=$1, shiprocket_pickup_location=$2 WHERE shop_domain=$3',
+    [auto_pickup === true, pickup_location || '', shop]);
+  logActivity(req, 'Shiprocket Settings Updated', `auto_pickup=${auto_pickup}, location=${pickup_location||'-'}`);
+  res.json({ ok: true });
 });
 
 async function getSellerShiprocketToken(shop) {
@@ -1321,46 +1355,65 @@ async function sellerShiprocketAPI(shop, endpoint, method, body) {
   return r.json();
 }
 
+// Reusable: create Shiprocket return pickup + AWB + schedule, update DB
+async function createShiprocketPickup(shop, d) {
+  const return_id = d.id || d.return_id;
+  // Get seller's registered pickup location (return destination/warehouse)
+  const stRow = await pool.query('SELECT shiprocket_pickup_location FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  let dest = { name: 'Primary', address: 'Warehouse', city: 'City', state: 'State', pincode: '110001', phone: '0000000000', email: '' };
+  try {
+    const locResp = await sellerShiprocketAPI(shop, '/settings/company/pickup', 'GET');
+    const locs = locResp?.data?.shipping_address || [];
+    const chosen = locs.find(l => l.pickup_location === stRow.rows[0]?.shiprocket_pickup_location) || locs[0];
+    if (chosen) dest = { name: chosen.pickup_location, address: chosen.address, city: chosen.city, state: chosen.state, pincode: chosen.pin_code, phone: chosen.phone, email: chosen.email };
+  } catch(e) {}
+  const orderData = await sellerShiprocketAPI(shop, '/orders/create/return', 'POST', {
+    order_id: `RETURN-${return_id}`,
+    order_date: new Date().toISOString().split('T')[0],
+    channel_id: '',
+    pickup_customer_name: d.customer_name,
+    pickup_address: d.customer_address || 'Customer Address',
+    pickup_city: d.customer_city || 'City',
+    pickup_state: d.customer_state || 'State',
+    pickup_country: 'India',
+    pickup_pincode: d.customer_pincode || '110001',
+    pickup_email: d.customer_email || '',
+    pickup_phone: d.customer_phone || '',
+    shipping_customer_name: dest.name,
+    shipping_address: dest.address,
+    shipping_city: dest.city,
+    shipping_state: dest.state,
+    shipping_country: 'India',
+    shipping_pincode: dest.pincode,
+    shipping_email: dest.email || d.customer_email || '',
+    shipping_phone: dest.phone || '0000000000',
+    order_items: [{ name: d.product_name || 'Return Item', sku: d.product_sku || 'SKU', units: d.quantity || 1, selling_price: d.amount || 0 }],
+    payment_method: 'prepaid',
+    sub_total: d.amount || 0,
+    length: 10, breadth: 10, height: 10, weight: 0.5
+  });
+  let awb = '', awbData = null;
+  if (orderData.shipment_id) {
+    try {
+      awbData = await sellerShiprocketAPI(shop, '/courier/assign/awb', 'POST', { shipment_id: orderData.shipment_id });
+      awb = awbData?.response?.data?.awb_code || '';
+      await sellerShiprocketAPI(shop, '/courier/generate/pickup', 'POST', { shipment_id: [orderData.shipment_id] });
+    } catch(e) {}
+  }
+  if (orderData.order_id) {
+    await pool.query('UPDATE returns SET pickup_status=$1, tracking_number=$2, updated_at=NOW() WHERE id=$3',
+      ['pickup_scheduled', awb || orderData.shipment_id || '', return_id]);
+  }
+  return { ...orderData, awb_code: awb, awb: awbData };
+}
+
 // Shiprocket APIs (per seller)
 app.post('/api/shiprocket/pickup', async (req, res) => {
-  const { return_id, shop, customer_name, customer_email, customer_phone, customer_address, customer_city, customer_state, customer_pincode, product_name, product_sku, quantity, amount, order_id } = req.body;
+  const { return_id, shop } = req.body;
   if (!return_id || !shop) return res.status(400).json({ error: 'return_id and shop required' });
   try {
-    const orderData = await sellerShiprocketAPI(shop, '/orders/create/return', 'POST', {
-      order_id: `RETURN-${return_id}`,
-      order_date: new Date().toISOString().split('T')[0],
-      channel_id: '',
-      pickup_customer_name: customer_name,
-      pickup_address: customer_address || 'Customer Address',
-      pickup_city: customer_city || 'City',
-      pickup_state: customer_state || 'State',
-      pickup_country: 'India',
-      pickup_pincode: customer_pincode || '110001',
-      pickup_email: customer_email || '',
-      pickup_phone: customer_phone || '',
-      shipping_customer_name: customer_name,
-      shipping_address: customer_address || 'Warehouse Address',
-      shipping_city: customer_city || 'City',
-      shipping_state: customer_state || 'State',
-      shipping_country: 'India',
-      shipping_pincode: customer_pincode || '110001',
-      shipping_email: customer_email || '',
-      shipping_phone: customer_phone || '',
-      order_items: [{
-        name: product_name || 'Return Item',
-        sku: product_sku || 'SKU',
-        units: quantity || 1,
-        selling_price: amount || 0
-      }],
-      payment_method: 'prepaid',
-      sub_total: amount || 0,
-      length: 10, breadth: 10, height: 10, weight: 0.5
-    });
-    if (orderData.order_id) {
-      await pool.query('UPDATE returns SET pickup_status=$1, tracking_number=$2, updated_at=NOW() WHERE id=$3',
-        ['pickup_scheduled', orderData.shipment_id || '', return_id]);
-    }
-    res.json(orderData);
+    const result = await createShiprocketPickup(shop, { ...req.body, id: return_id });
+    res.json(result);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
