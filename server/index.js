@@ -1031,10 +1031,10 @@ app.get('/api/portal-settings', async (req, res) => {
       heading: ss.portal_heading || 'Return & Exchange Portal',
       subheading: ss.portal_subheading || 'Submit your return request in 3 easy steps',
       logo_url: ss.portal_logo || '',
-      return_reasons: ss.return_reasons || 'Damaged Product,Wrong Item Received,Size/Fit Issue,Quality Not As Expected,Not As Described,Changed My Mind',
-      exchange_reasons: ss.exchange_reasons || 'Wrong Size,Wrong Color,Want Different Product',
+      return_reasons: (ss.return_reasons && ss.return_reasons.includes(',')) ? ss.return_reasons : 'Damaged Product,Wrong Item Received,Size/Fit Issue,Quality Not As Expected,Not As Described,Changed My Mind',
+      exchange_reasons: (ss.exchange_reasons && ss.exchange_reasons.includes(',')) ? ss.exchange_reasons : 'Wrong Size,Wrong Color,Want Different Product',
       exchange_enabled: ss.exchange_enabled !== false,
-      refund_methods: ss.refund_methods || 'Original Payment Method,Bank Transfer,Store Credit,UPI'
+      refund_methods: (ss.refund_methods && ss.refund_methods.includes(',')) ? ss.refund_methods : 'Original Payment Method,Bank Transfer,Store Credit,UPI'
     });
   } catch(e) { res.json({}); }
 });
