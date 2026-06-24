@@ -675,10 +675,8 @@ app.get('/api/auth/callback', async (req, res) => {
     }
 
     const plan = req.query.plan || 'starter';
-    // Always redirect into Shopify Admin so App Bridge loads and token exchange happens
-    const adminAppUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com','')}/apps/goreturn`;
     if (plan === 'free_trial' || plan === 'free') {
-      res.redirect(adminAppUrl);
+      res.redirect(`/?shop=${shop}`);
     } else {
       res.redirect(`/api/billing/create?shop=${shop}&plan=${plan}`);
     }
