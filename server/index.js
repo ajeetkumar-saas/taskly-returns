@@ -15,7 +15,7 @@ async function sendEmail(to, subject, html) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM || 'GoReturn <onboarding@resend.dev>',
+        from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>',
         to: [to],
         subject,
         html
