@@ -29,28 +29,38 @@ async function sendEmail(to, subject, html) {
   } catch(e) { lastEmailError = e.message; console.log('Email error:', e.message); return false; }
 }
 
-function returnStatusEmail(customerName, orderId, status, amount) {
+function returnStatusEmail(customerName, orderId, status, amount, extra) {
+  const e = extra || {};
+  const firstName = customerName ? customerName.split(' ')[0] : 'Customer';
   const statusMessages = {
-    pending: { title: 'Return Request Received', color: '#D97706', msg: 'We have received your return request and will review it shortly.' },
-    approved: { title: 'Return Approved!', color: '#059669', msg: 'Great news! Your return has been approved. We will arrange pickup soon.' },
-    inspected: { title: 'Product Inspected', color: '#7C3AED', msg: 'We have received and inspected your returned product.' },
-    refunded: { title: 'Refund Processed!', color: '#0284C7', msg: 'Your refund has been processed. The amount will be credited within 5-7 business days.' },
-    rejected: { title: 'Return Request Declined', color: '#DC2626', msg: 'Unfortunately, your return request could not be approved. Please contact support for more details.' },
-    processed: { title: 'Return Completed', color: '#1D4ED8', msg: 'Your return has been fully processed. Thank you!' }
+    pending: { title: 'Return request received', color: '#D97706', msg: `We've received your return request for order <strong>#${orderId}</strong>. Our team will review it within 24-48 hours and notify you once a decision is made.` },
+    approved: { title: 'Return approved', color: '#059669', msg: `Great news! Your return for order <strong>#${orderId}</strong> has been approved.`, extra: '<p style="color:#374151;font-size:13px;margin-top:12px"><strong>What to do next:</strong></p><p style="color:#6B7280;font-size:12px;line-height:1.6">1. Pack the item securely in its original packaging<br>2. Include your order number inside the package<br>3. Ship it back — we\'ll email you once received</p>' },
+    inspected: { title: 'Product inspected', color: '#7C3AED', msg: `We've received and inspected your returned product from order <strong>#${orderId}</strong>. Your refund will be processed shortly.` },
+    refunded: { title: 'Refund processed', color: '#0284C7', msg: `Your refund of <strong>$${amount || '0'}</strong> for order <strong>#${orderId}</strong> has been processed and sent to your original payment method.`, extra: '<p style="color:#6B7280;font-size:12px;margin-top:8px">Processing times depend on your bank or payment provider. If you don\'t see the refund after 7 business days, please contact your bank first.</p>' },
+    rejected: { title: 'Return request declined', color: '#DC2626', msg: `Unfortunately, your return request for order <strong>#${orderId}</strong> could not be approved at this time. Please contact the store for more details.` },
+    processed: { title: 'Return completed', color: '#1D4ED8', msg: `Your return for order <strong>#${orderId}</strong> has been fully processed. Thank you for your patience!` }
   };
   const s = statusMessages[status] || statusMessages.pending;
-  return `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px">
-    <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">GoReturn</h2></div>
-    <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px">
-      <div style="text-align:center;margin-bottom:16px"><span style="display:inline-block;padding:6px 16px;border-radius:20px;background:${s.color}20;color:${s.color};font-weight:600;font-size:14px">${s.title}</span></div>
-      <p style="color:#374151;font-size:14px">Hi ${customerName},</p>
-      <p style="color:#6B7280;font-size:14px">${s.msg}</p>
-      <div style="background:#F9FAFB;border-radius:8px;padding:12px;margin:16px 0">
-        <p style="margin:4px 0;font-size:13px;color:#6B7280">Order: <strong style="color:#111">${orderId}</strong></p>
-        <p style="margin:4px 0;font-size:13px;color:#6B7280">Status: <strong style="color:${s.color}">${status.toUpperCase()}</strong></p>
-        ${amount ? '<p style="margin:4px 0;font-size:13px;color:#6B7280">Amount: <strong style="color:#111">$'+amount+'</strong></p>' : ''}
-      </div>
-      <p style="color:#9CA3AF;font-size:12px;margin-top:20px;text-align:center">Powered by GoReturn</p>
+  const detailRows = [
+    `<p style="margin:4px 0;font-size:13px;color:#6B7280">Order: <strong style="color:#111">#${orderId}</strong></p>`,
+    e.product ? `<p style="margin:4px 0;font-size:13px;color:#6B7280">Product: <strong style="color:#111">${e.product}</strong></p>` : '',
+    e.reason ? `<p style="margin:4px 0;font-size:13px;color:#6B7280">Reason: <strong style="color:#111">${e.reason}</strong></p>` : '',
+    e.refund_method ? `<p style="margin:4px 0;font-size:13px;color:#6B7280">Refund to: <strong style="color:#111">${e.refund_method.replace(/_/g,' ')}</strong></p>` : '',
+    amount ? `<p style="margin:4px 0;font-size:13px;color:#6B7280">Amount: <strong style="color:#111">$${amount}</strong></p>` : '',
+    `<p style="margin:4px 0;font-size:13px;color:#6B7280">Status: <strong style="color:${s.color}">${s.title}</strong></p>`
+  ].filter(Boolean).join('');
+  const trackBtn = e.returnId ? `<div style="text-align:center;margin:16px 0"><a href="${APP_URL}/return.html?track=${e.returnId}" style="background:#4F46E5;color:white;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;font-size:13px;display:inline-block">Track your return</a></div>` : '';
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:20px">
+    <div style="text-align:center;padding:20px;background:#4F46E5;color:white;border-radius:12px 12px 0 0"><h2 style="margin:0;font-size:18px;font-weight:600;letter-spacing:0.5px">GoReturn</h2></div>
+    <div style="padding:28px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 12px 12px">
+      <div style="text-align:center;margin-bottom:20px"><span style="display:inline-block;padding:6px 18px;border-radius:20px;background:${s.color}15;color:${s.color};font-weight:600;font-size:13px">${s.title}</span></div>
+      <p style="color:#374151;font-size:14px;margin:0 0 8px">Hi ${firstName},</p>
+      <p style="color:#6B7280;font-size:14px;line-height:1.6;margin:0 0 16px">${s.msg}</p>
+      <div style="background:#F9FAFB;border-radius:10px;padding:14px;margin:16px 0">${detailRows}</div>
+      ${s.extra || ''}
+      ${trackBtn}
+      <p style="color:#9CA3AF;font-size:11px;margin-top:24px;text-align:center">Need help? Reply to this email or contact the store directly.</p>
+      <div style="text-align:center;margin-top:16px;padding-top:16px;border-top:1px solid #F3F4F6"><span style="color:#9CA3AF;font-size:11px">Powered by</span> <span style="color:#4F46E5;font-size:11px;font-weight:600">GoReturn</span></div>
     </div>
   </div>`;
 }
@@ -442,14 +452,20 @@ app.post('/api/team', authenticateRequest, async (req, res) => {
       [shop_domain || '', name, email, '', role || 'viewer', 'invited', inviteToken]
     );
     const inviteLink = `${APP_URL}/set-password.html?token=${inviteToken}`;
-    const emailed = await sendEmail(email, 'You have been invited to GoReturn',
-      `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:24px">
-        <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">GoReturn</h2></div>
-        <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px">
-          <p style="color:#374151;font-size:14px">Hi ${name},</p>
-          <p style="color:#6B7280;font-size:14px">You've been invited to join the GoReturn team as <strong>${role || 'viewer'}</strong>. Click below to set your password and activate your account.</p>
-          <div style="text-align:center;margin:24px 0"><a href="${inviteLink}" style="background:#4F46E5;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;display:inline-block">Set Your Password</a></div>
-          <p style="color:#9CA3AF;font-size:12px">Or copy this link: ${inviteLink}</p>
+    const roleDesc = { owner: 'Full access to all settings and billing', admin: 'Manage returns, settings, and team members', viewer: 'View returns, analytics, and customer data' };
+    const emailed = await sendEmail(email, `You're invited to join ${shop_domain ? shop_domain.replace('.myshopify.com','') : 'a store'} on GoReturn`,
+      `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:20px">
+        <div style="text-align:center;padding:20px;background:#4F46E5;color:white;border-radius:12px 12px 0 0"><h2 style="margin:0;font-size:18px;font-weight:600;letter-spacing:0.5px">GoReturn</h2></div>
+        <div style="padding:28px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 12px 12px">
+          <p style="color:#374151;font-size:14px;margin:0 0 8px">Hi ${name},</p>
+          <p style="color:#6B7280;font-size:14px;line-height:1.6;margin:0 0 16px">You've been invited to join <strong>${shop_domain ? shop_domain.replace('.myshopify.com','') : 'a store'}</strong> on GoReturn as a <strong>${(role||'viewer').charAt(0).toUpperCase()+(role||'viewer').slice(1)}</strong>.</p>
+          <div style="background:#F9FAFB;border-radius:10px;padding:14px;margin:16px 0">
+            <p style="margin:4px 0;font-size:13px;color:#6B7280">Role: <strong style="color:#111">${(role||'viewer').charAt(0).toUpperCase()+(role||'viewer').slice(1)}</strong></p>
+            <p style="margin:4px 0;font-size:12px;color:#9CA3AF">${roleDesc[role]||roleDesc.viewer}</p>
+          </div>
+          <div style="text-align:center;margin:24px 0"><a href="${inviteLink}" style="background:#4F46E5;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px;display:inline-block">Accept invite & set password</a></div>
+          <p style="color:#9CA3AF;font-size:11px;margin-top:16px;text-align:center">This invite expires in 7 days. If you didn't expect this, you can safely ignore it.</p>
+          <div style="text-align:center;margin-top:16px;padding-top:16px;border-top:1px solid #F3F4F6"><span style="color:#9CA3AF;font-size:11px">Powered by</span> <span style="color:#4F46E5;font-size:11px;font-weight:600">GoReturn</span></div>
         </div>
       </div>`);
     await logActivity(req, 'Team Member Invited', `${name} (${email}) as ${role}`);
@@ -1142,7 +1158,7 @@ app.post('/api/returns', async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
     [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'']
   );
-  if (customer_email) sendEmail(customer_email, 'Return Request Received - ' + (order_number||order_id), returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount));
+  if (customer_email) sendEmail(customer_email, 'Return Request Received - #' + (order_number||order_id), returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount, { product: product_name, reason, refund_method, returnId: r.rows[0].id }));
   res.json(r.rows[0]);
 });
 
@@ -1165,7 +1181,7 @@ app.patch('/api/returns/:id', async (req, res) => {
   values.push(req.params.id);
   const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idx} RETURNING *`, values);
   const ret = r.rows[0];
-  if (status && ret.customer_email) sendEmail(ret.customer_email, `Return ${status.toUpperCase()} - ${ret.order_number||ret.order_id}`, returnStatusEmail(ret.customer_name||'Customer', ret.order_number||ret.order_id, status, ret.amount));
+  if (status && ret.customer_email) sendEmail(ret.customer_email, `Return ${status.toUpperCase()} - #${ret.order_number||ret.order_id}`, returnStatusEmail(ret.customer_name||'Customer', ret.order_number||ret.order_id, status, ret.amount, { product: ret.product_name, reason: ret.reason, refund_method: ret.refund_method, returnId: ret.id }));
   if (status) logActivity(req, 'Return Status Changed', `#${req.params.id} → ${status} (${ret.customer_name}, ${ret.order_id})`);
   if (archived) logActivity(req, 'Return Archived', `#${req.params.id} (${ret.customer_name})`);
   res.json(ret);
