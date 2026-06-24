@@ -41,6 +41,7 @@ function returnStatusEmail(customerName, orderId, status, amount, extra) {
     processed: { title: 'Return completed', color: '#1D4ED8', msg: `Your return for order <strong>#${orderId}</strong> has been fully processed. Thank you for your patience!` }
   };
   const s = statusMessages[status] || statusMessages.pending;
+  if (e.customMsg) s.msg = e.customMsg;
   const detailRows = [
     `<p style="margin:4px 0;font-size:13px;color:#6B7280">Order: <strong style="color:#111">#${orderId}</strong></p>`,
     e.product ? `<p style="margin:4px 0;font-size:13px;color:#6B7280">Product: <strong style="color:#111">${e.product}</strong></p>` : '',
@@ -1150,6 +1151,49 @@ app.post('/api/settings', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Email Templates (per-store customization) ----
+const DEFAULT_EMAIL_TEMPLATES = {
+  pending:  { subject: 'Return Request Received - #{order}', message: "We've received your return request for order #{order}. Our team will review it within 24-48 hours and notify you once a decision is made." },
+  approved: { subject: 'Return Approved - #{order}', message: 'Great news! Your return for order #{order} has been approved.' },
+  inspected:{ subject: 'Product Inspected - #{order}', message: "We've received and inspected your returned product from order #{order}. Your refund will be processed shortly." },
+  refunded: { subject: 'Refund Processed - #{order}', message: 'Your refund of ${amount} for order #{order} has been processed and sent to your original payment method.' },
+  rejected: { subject: 'Return Request Declined - #{order}', message: 'Unfortunately, your return request for order #{order} could not be approved at this time. Please contact us for more details.' }
+};
+async function getEmailTemplates(shop) {
+  try {
+    await pool.query('ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS email_templates TEXT');
+    const r = await pool.query('SELECT email_templates FROM store_settings WHERE shop_domain=$1', [shop]);
+    const raw = r.rows[0]?.email_templates;
+    if (!raw) return DEFAULT_EMAIL_TEMPLATES;
+    const custom = JSON.parse(raw);
+    const merged = {};
+    for (const k of Object.keys(DEFAULT_EMAIL_TEMPLATES)) merged[k] = { ...DEFAULT_EMAIL_TEMPLATES[k], ...(custom[k]||{}) };
+    return merged;
+  } catch(e) { return DEFAULT_EMAIL_TEMPLATES; }
+}
+function fillPlaceholders(str, data) {
+  return (str||'').replace(/\{order\}/g, data.order||'').replace(/\{name\}/g, data.name||'').replace(/\{amount\}/g, data.amount||'0').replace(/\{product\}/g, data.product||'');
+}
+app.get('/api/email-templates', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.json({ templates: DEFAULT_EMAIL_TEMPLATES, defaults: DEFAULT_EMAIL_TEMPLATES });
+  const templates = await getEmailTemplates(shop);
+  res.json({ templates, defaults: DEFAULT_EMAIL_TEMPLATES });
+});
+app.post('/api/email-templates', async (req, res) => {
+  const { shop, templates } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  try {
+    await pool.query('ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS email_templates TEXT');
+    await pool.query(
+      `INSERT INTO store_settings (shop_domain, email_templates) VALUES ($1,$2)
+       ON CONFLICT (shop_domain) DO UPDATE SET email_templates=$2`,
+      [shop, JSON.stringify(templates||{})]);
+    logActivity(req, 'Email Templates Updated', `Store ${shop}`);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Create return/exchange
 app.post('/api/returns', async (req, res) => {
   const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant, images } = req.body;
@@ -1158,7 +1202,13 @@ app.post('/api/returns', async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
     [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'']
   );
-  if (customer_email) sendEmail(customer_email, 'Return Request Received - #' + (order_number||order_id), returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount, { product: product_name, reason, refund_method, returnId: r.rows[0].id }));
+  if (customer_email) {
+    const tpl = await getEmailTemplates(shop_domain);
+    const ph = { order: order_number||order_id, name: customer_name, amount, product: product_name };
+    const subj = fillPlaceholders(tpl.pending.subject, ph);
+    const msg = fillPlaceholders(tpl.pending.message, ph);
+    sendEmail(customer_email, subj, returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount, { product: product_name, reason, refund_method, returnId: r.rows[0].id, customMsg: msg }));
+  }
   res.json(r.rows[0]);
 });
 
@@ -1181,7 +1231,14 @@ app.patch('/api/returns/:id', async (req, res) => {
   values.push(req.params.id);
   const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idx} RETURNING *`, values);
   const ret = r.rows[0];
-  if (status && ret.customer_email) sendEmail(ret.customer_email, `Return ${status.toUpperCase()} - #${ret.order_number||ret.order_id}`, returnStatusEmail(ret.customer_name||'Customer', ret.order_number||ret.order_id, status, ret.amount, { product: ret.product_name, reason: ret.reason, refund_method: ret.refund_method, returnId: ret.id }));
+  if (status && ret.customer_email) {
+    const tpl = await getEmailTemplates(ret.shop_domain);
+    const t = tpl[status];
+    const ph = { order: ret.order_number||ret.order_id, name: ret.customer_name, amount: ret.amount, product: ret.product_name };
+    const subj = t ? fillPlaceholders(t.subject, ph) : `Return ${status.toUpperCase()} - #${ret.order_number||ret.order_id}`;
+    const msg = t ? fillPlaceholders(t.message, ph) : null;
+    sendEmail(ret.customer_email, subj, returnStatusEmail(ret.customer_name||'Customer', ret.order_number||ret.order_id, status, ret.amount, { product: ret.product_name, reason: ret.reason, refund_method: ret.refund_method, returnId: ret.id, customMsg: msg }));
+  }
   if (status) logActivity(req, 'Return Status Changed', `#${req.params.id} → ${status} (${ret.customer_name}, ${ret.order_id})`);
   if (archived) logActivity(req, 'Return Archived', `#${req.params.id} (${ret.customer_name})`);
   res.json(ret);
