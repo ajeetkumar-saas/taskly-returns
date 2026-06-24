@@ -660,17 +660,27 @@ UPI</textarea></div>
       </div>
       <!-- Store Data Tab -->
       <div id="admPanel-storedata" style="display:none">
-        <div class="card"><div class="card-hdr"><h3><i class="fas fa-chart-bar" style="color:var(--primary);margin-right:8px"></i>Store-wise Data</h3>
-          <select id="storeDataFilter" onchange="loadStoreData()" style="padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px"><option value="all">All Stores</option></select>
+        <div class="card"><div class="card-hdr" style="flex-wrap:wrap;gap:8px"><h3><i class="fas fa-chart-bar" style="color:var(--primary);margin-right:8px"></i>Store-wise Data</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="storeDataFilter" onchange="loadStoreData()" style="padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px"><option value="all">All Stores</option></select>
+            <select id="storeDataDate" onchange="loadStoreData()" style="padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px"><option value="all">All Time</option><option value="7">7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option><option value="365">1 Year</option></select>
+          </div>
         </div>
         <div class="card-body">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="storeDataStats">
-            <div style="text-align:center;padding:16px;background:var(--primary-light);border-radius:12px"><div style="font-size:24px;font-weight:700;color:var(--primary)" id="sdTotal">0</div><div style="font-size:11px;color:var(--gray-500)">Total Returns</div></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:20px" id="storeDataStats">
+            <div style="text-align:center;padding:16px;background:var(--primary-light);border-radius:12px"><div style="font-size:24px;font-weight:700;color:var(--primary)" id="sdTotal">0</div><div style="font-size:11px;color:var(--gray-500)">Returns</div></div>
+            <div style="text-align:center;padding:16px;background:#EDE9FE;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#7C3AED" id="sdExchanges">0</div><div style="font-size:11px;color:var(--gray-500)">Exchanges</div></div>
             <div style="text-align:center;padding:16px;background:#FEF3C7;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#D97706" id="sdPending">0</div><div style="font-size:11px;color:var(--gray-500)">Pending</div></div>
             <div style="text-align:center;padding:16px;background:#D1FAE5;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#059669" id="sdApproved">0</div><div style="font-size:11px;color:var(--gray-500)">Approved</div></div>
             <div style="text-align:center;padding:16px;background:#DBEAFE;border-radius:12px"><div style="font-size:24px;font-weight:700;color:#2563EB" id="sdRefunded">0</div><div style="font-size:11px;color:var(--gray-500)">Refunded</div></div>
+            <div style="text-align:center;padding:16px;background:#FCE7F3;border-radius:12px"><div style="font-size:20px;font-weight:700;color:#DB2777" id="sdValue">$0</div><div style="font-size:11px;color:var(--gray-500)">Return Value</div></div>
+            <div style="text-align:center;padding:16px;background:#DCFCE7;border-radius:12px"><div style="font-size:20px;font-weight:700;color:#16A34A" id="sdSaved">$0</div><div style="font-size:11px;color:var(--gray-500)">Revenue Saved</div></div>
           </div>
-          <table><thead><tr><th>Store</th><th>Order</th><th>Customer</th><th>Product</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody id="storeDataTb"><tr><td colspan="7" class="empty">Select a store or view all</td></tr></tbody></table>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+            <div><h4 style="font-size:13px;color:var(--gray-700);margin-bottom:8px"><i class="fas fa-box" style="margin-right:6px;color:var(--primary)"></i>Top Returned Products</h4><table style="font-size:12px"><tbody id="sdTopProducts"><tr><td class="empty">No data</td></tr></tbody></table></div>
+            <div><h4 style="font-size:13px;color:var(--gray-700);margin-bottom:8px"><i class="fas fa-tag" style="margin-right:6px;color:var(--primary)"></i>Top Return Reasons</h4><table style="font-size:12px"><tbody id="sdTopReasons"><tr><td class="empty">No data</td></tr></tbody></table></div>
+          </div>
+          <table><thead><tr><th>Store</th><th>Order</th><th>Customer</th><th>Product</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody id="storeDataTb"><tr><td colspan="8" class="empty">Select a store or view all</td></tr></tbody></table>
         </div></div>
       </div>
       <!-- Activity Log Tab -->
@@ -720,11 +730,11 @@ async function exchangeSessionToken(attempt){
 }
 exchangeSessionToken(0);
 
-let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return',currentPlan='free',globalDate='7',exDate='all';
+let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return',currentPlan='free',globalDate='7',exDate='all',currentRole='owner';
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
 let analyticsData=null,curATab='requests';
 
-function showPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin',team:'Team Members'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='fraud')loadFraud();if(p==='pincode-risk')loadPincodeRisk();if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='team')loadTeam();if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
+function showPage(p){if(p!=='admin'&&!roleCanAccess(p)){showAlert('You don\'t have permission to access this page','error');return;}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin',team:'Team Members'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='fraud')loadFraud();if(p==='pincode-risk')loadPincodeRisk();if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='team')loadTeam();if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
 function showAlert(m,t){const e=document.getElementById('alertBox');e.innerHTML=`<div class="alert alert-${t}"><i class="fas fa-${t==='success'?'check-circle':'exclamation-circle'}"></i>${m}</div>`;setTimeout(()=>e.innerHTML='',4000);}
 
 let allStores=[];
@@ -858,20 +868,38 @@ function viewStoreData(shop){
 
 async function loadStoreData(){
   const shop=document.getElementById('storeDataFilter').value;
+  const dateSel=document.getElementById('storeDataDate');
+  const days=dateSel?dateSel.value:'all';
   const url=shop==='all'?'/api/returns?shop=all':'/api/returns?shop='+shop;
   try{
-    const r=await fetch(url);const rets=await r.json();const data=Array.isArray(rets)?rets:[];
-    document.getElementById('sdTotal').textContent=data.length;
+    const r=await fetch(url);const rets=await r.json();let data=Array.isArray(rets)?rets:[];
+    if(days!=='all'){const cutoff=Date.now()-parseInt(days)*86400000;data=data.filter(x=>new Date(x.created_at).getTime()>=cutoff);}
+    const returns=data.filter(x=>x.type!=='exchange'), exchanges=data.filter(x=>x.type==='exchange');
+    const totalValue=data.reduce((s,x)=>s+parseFloat(x.amount||0),0);
+    const saved=exchanges.reduce((s,x)=>s+parseFloat(x.amount||0),0);
+    document.getElementById('sdTotal').textContent=returns.length;
+    document.getElementById('sdExchanges').textContent=exchanges.length;
     document.getElementById('sdPending').textContent=data.filter(x=>x.status==='pending').length;
     document.getElementById('sdApproved').textContent=data.filter(x=>x.status==='approved').length;
     document.getElementById('sdRefunded').textContent=data.filter(x=>x.status==='refunded').length;
+    document.getElementById('sdValue').textContent='$'+Math.round(totalValue).toLocaleString('en-IN');
+    document.getElementById('sdSaved').textContent='$'+Math.round(saved).toLocaleString('en-IN');
+    // Top products
+    const prodCounts={};data.forEach(x=>{const p=(x.product_name||'Unknown').split(',')[0].trim();if(p)prodCounts[p]=(prodCounts[p]||0)+1;});
+    const topProds=Object.entries(prodCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    document.getElementById('sdTopProducts').innerHTML=topProds.length?topProds.map(([p,c])=>`<tr><td>${p.substring(0,32)}</td><td style="text-align:right;font-weight:600">${c}</td></tr>`).join(''):'<tr><td class="empty">No data</td></tr>';
+    // Top reasons
+    const reasonCounts={};data.forEach(x=>{const rs=fmtReason(x.reason||'Other');reasonCounts[rs]=(reasonCounts[rs]||0)+1;});
+    const topReasons=Object.entries(reasonCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    document.getElementById('sdTopReasons').innerHTML=topReasons.length?topReasons.map(([p,c])=>`<tr><td>${p}</td><td style="text-align:right;font-weight:600">${c}</td></tr>`).join(''):'<tr><td class="empty">No data</td></tr>';
     const tb=document.getElementById('storeDataTb');
-    if(!data.length){tb.innerHTML='<tr><td colspan="7" class="empty">No returns data</td></tr>';return;}
+    if(!data.length){tb.innerHTML='<tr><td colspan="8" class="empty">No data for this period</td></tr>';return;}
     tb.innerHTML=data.slice(0,100).map(x=>`<tr>
       <td style="font-size:11px">${x.shop_domain||'-'}</td>
-      <td>#${x.order_id}</td>
-      <td>${x.customer_name}</td>
+      <td>#${x.order_number||x.order_id}</td>
+      <td>${x.customer_name||'-'}<div style="font-size:10px;color:var(--gray-400)">${x.customer_email||''}</div></td>
       <td style="font-size:11px">${(x.product_name||'').substring(0,30)}</td>
+      <td><span class="badge badge-${x.type==='exchange'?'processed':'pending'}">${x.type||'return'}</span></td>
       <td>$${x.amount||0}</td>
       <td><span class="badge badge-${x.status}">${x.status}</span></td>
       <td style="font-size:11px">${fmtDate(x.created_at)}</td>
@@ -937,7 +965,25 @@ const PLAN_ACCESS = {
   growth: ['dashboard','returns','exchanges','orders','analytics','export','stores','policies','reasons','logistics','locations','notifications','automation','promotions','settings','help'],
   pro: ['dashboard','returns','exchanges','orders','analytics','export','stores','policies','reasons','logistics','locations','notifications','automation','promotions','webhooks','settings','help']
 };
-function canAccess(page){if(localStorage.getItem('isAdmin')==='true')return true;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;return allowed.includes(page);}
+// Role-wise access (what a logged-in team member's role can open)
+const ROLE_ACCESS = {
+  owner: 'all',
+  admin: ['dashboard','returns','exchanges','orders','analytics','export','stores','policies','reasons','logistics','locations','notifications','automation','promotions','webhooks','settings','team','help','fraud','pincode-risk','store-analytics'],
+  viewer: ['dashboard','returns','exchanges','orders','analytics','export','help']
+};
+function roleCanAccess(page){if(localStorage.getItem('isAdmin')==='true')return true;const allowed=ROLE_ACCESS[currentRole]||ROLE_ACCESS.owner;return allowed==='all'||allowed.includes(page);}
+function applyRoleAccess(){
+  // Hide nav items the current role cannot access (page parsed from onclick)
+  document.querySelectorAll('.nav-item').forEach(el=>{
+    const oc=el.getAttribute('onclick')||'';
+    const m=oc.match(/showPage\('([^']+)'\)/);
+    if(!m)return;
+    const p=m[1];
+    if(p==='admin')return; // admin nav handled separately
+    el.style.display=roleCanAccess(p)?'':'none';
+  });
+}
+function canAccess(page){if(localStorage.getItem('isAdmin')==='true')return true;if(!roleCanAccess(page))return false;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;return allowed.includes(page);}
 function showUpgrade(feature){const planNeeded={exchanges:'Starter ($11.99/mo)',analytics:'Starter ($11.99/mo)',export:'Starter ($11.99/mo)',locations:'Starter ($11.99/mo)',notifications:'Starter ($11.99/mo)',automation:'Growth ($23.99/mo)',promotions:'Growth ($23.99/mo)',webhooks:'Pro ($47.99/mo)'}[feature]||'Starter';
 document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-upgrade').classList.add('active');document.getElementById('pageTitle').textContent='Upgrade Required';document.getElementById('upgradeFeature').textContent=feature.charAt(0).toUpperCase()+feature.slice(1);document.getElementById('upgradePlan').textContent=planNeeded;}
 function applyPlanLocks(){const navItems=document.querySelectorAll('.nav-item');navItems.forEach(n=>{const onclick=n.getAttribute('onclick');if(!onclick)return;const match=onclick.match(/showPage\('(.+?)'\)/);if(!match)return;const page=match[1];if(page==='admin')return;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;if(!allowed.includes(page)&&localStorage.getItem('isAdmin')!=='true'){n.style.opacity='0.5';const existing=n.querySelector('.nav-lock');if(!existing){const lock=document.createElement('span');lock.className='nav-lock';lock.innerHTML='<i class="fas fa-lock" style="font-size:9px"></i>';lock.style.cssText='margin-left:auto;color:var(--gray-500);font-size:9px';n.appendChild(lock);}}else{n.style.opacity='1';const lock=n.querySelector('.nav-lock');if(lock)lock.remove();}});}
@@ -993,7 +1039,7 @@ function checkDashboardAuth(){
   if(!token){window.location.href='/login';return;}
   fetch('/api/admin/session',{headers:{'x-auth-token':token}}).then(r=>r.json()).then(d=>{
     if(!d.loggedIn){localStorage.removeItem('goreturn_token');localStorage.removeItem('goreturn_user');window.location.href='/login';}
-    else{const u=document.getElementById('loggedInUser');u.style.display='block';u.innerHTML='<i class="fas fa-user-circle"></i> '+d.user.name+'<br><span style="color:#818CF8;font-size:10px">'+d.user.role.toUpperCase()+'</span>';}
+    else{currentRole=d.user.role||'owner';applyRoleAccess();const u=document.getElementById('loggedInUser');u.style.display='block';u.innerHTML='<i class="fas fa-user-circle"></i> '+d.user.name+'<br><span style="color:#818CF8;font-size:10px">'+d.user.role.toUpperCase()+'</span>';}
   }).catch(()=>{});
 }
 
@@ -1006,11 +1052,14 @@ function handleLogout(){
 
 // Team functions
 async function loadTeam(){
-  const token=getAuthToken();if(!token)return;
+  const tb=document.getElementById('teamTb');
+  const token=getAuthToken();
+  if(!token){tb.innerHTML='<tr><td colspan="6" class="empty">Sign in to the GoReturn web dashboard to manage your team.</td></tr>';return;}
   try{
     const r=await fetch('/api/team',{headers:{'x-auth-token':token}});
+    if(r.status===401){tb.innerHTML='<tr><td colspan="6" class="empty">Session expired. Please sign in again to manage your team.</td></tr>';return;}
     const members=await r.json();
-    const tb=document.getElementById('teamTb');
+    if(!Array.isArray(members)){tb.innerHTML='<tr><td colspan="6" class="empty">Could not load team. Please try again.</td></tr>';return;}
     if(!members.length){tb.innerHTML='<tr><td colspan="6" class="empty">No team members yet. Click "Add Member" to invite.</td></tr>';return;}
     tb.innerHTML=members.map(m=>`<tr>
       <td><strong>${m.name}</strong></td>
@@ -1020,7 +1069,7 @@ async function loadTeam(){
       <td>${m.last_login?new Date(m.last_login).toLocaleDateString():'Never'}</td>
       <td><button class="btn btn-sm" onclick="deleteTeamMember(${m.id})" style="color:#DC2626;font-size:12px"><i class="fas fa-trash"></i></button></td>
     </tr>`).join('');
-  }catch(e){console.log('Team load error:',e);}
+  }catch(e){console.log('Team load error:',e);tb.innerHTML='<tr><td colspan="6" class="empty">Could not load team. Please try again.</td></tr>';}
 }
 
 function showTeamModal(){
