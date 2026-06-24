@@ -1699,6 +1699,17 @@ app.get('/api/debug/reset-store', async (req, res) => {
 
 app.get('/api/debug/last-exchange', (req, res) => res.json(lastExchange));
 
+// Force re-auth: redirects store through OAuth to get fresh expiring token
+app.get('/api/auth/reauth', (req, res) => {
+  const { shop, key } = req.query;
+  if (key !== 'goreturn2026admin') return res.status(403).send('invalid key');
+  if (!shop) return res.status(400).send('shop required');
+  const redirectUri = encodeURIComponent(`${APP_URL}/api/auth/callback`);
+  const scopes = 'read_orders,write_orders,read_customers,read_products,read_inventory';
+  const nonce = crypto.randomBytes(8).toString('hex');
+  res.redirect(`https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_CLIENT_ID}&scope=${scopes}&redirect_uri=${redirectUri}&state=${nonce}`);
+});
+
 app.get('/api/debug/force-refresh', async (req, res) => {
   const { shop, key } = req.query;
   if (key !== 'goreturn2026admin') return res.status(403).json({ error: 'invalid key' });
