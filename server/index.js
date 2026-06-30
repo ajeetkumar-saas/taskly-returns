@@ -2121,13 +2121,20 @@ async function runDataBackup(triggeredManually) {
     const tables = ['shopify_stores', 'returns', 'store_settings', 'team_members', 'admin_users', 'activity_log'];
     const dump = {};
     for (const t of tables) {
-      const r = await pool.query(`SELECT * FROM ${t}`);
+      // activity_log grows unbounded over time — cap it so backups stay small and fast indefinitely
+      const r = t === 'activity_log'
+        ? await pool.query(`SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 1000`)
+        : await pool.query(`SELECT * FROM ${t}`);
       dump[t] = r.rows.map(row => {
         const clean = { ...row };
         delete clean.access_token; delete clean.refresh_token; delete clean.password_hash;
         delete clean.shiprocket_password; delete clean.shiprocket_token; delete clean.session_token;
         delete clean.invite_token; delete clean.clickpost_api_key; delete clean.shadowfax_client_secret;
         delete clean.delhivery_api_key; delete clean.xpressbees_api_token; delete clean.wareiq_client_secret;
+        // Photos are already safe in Postgres (not on Railway's ephemeral disk) — excluding the
+        // base64 image blobs here keeps backup emails small and reliable instead of risking
+        // Resend attachment-size failures as return volume grows.
+        if (clean.images) { clean.has_images = true; delete clean.images; }
         return clean;
       });
     }
