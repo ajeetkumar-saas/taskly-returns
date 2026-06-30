@@ -65,7 +65,19 @@ function returnStatusEmail(customerName, orderId, status, amount, extra) {
 }
 
 const app = express();
-app.use(cors());
+// All real API calls in this app are same-origin (pages served by goreturn.pro calling its own
+// /api/* routes) — there's no legitimate cross-origin fetch use case, so CORS is restricted to
+// the app's own domain and Shopify's admin (covers the embedded App Bridge context) instead of
+// the previous open `*` default, which let any website make authenticated-looking requests here.
+const ALLOWED_ORIGINS = [process.env.APP_URL || 'https://goreturn.pro', 'https://admin.shopify.com'].filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // non-browser callers (curl, webhooks, server-to-server)
+    if (ALLOWED_ORIGINS.includes(origin) || /^https:\/\/[a-z0-9-]+\.myshopify\.com$/.test(origin)) return cb(null, true);
+    cb(null, false);
+  },
+  credentials: false
+}));
 // Allow embedding inside Shopify Admin iframe (required for App Bridge)
 app.use((req, res, next) => {
   const shop = req.query.shop;
