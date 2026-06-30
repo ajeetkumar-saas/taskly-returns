@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 
 let lastEmailError = '';
@@ -78,6 +79,25 @@ app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; }
 }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Lightweight in-memory rate limiter (no extra dependency, fine for a single Railway instance).
+// Protects against abuse/spam since there was previously zero request throttling anywhere.
+const rateBuckets = new Map();
+function rateLimit(maxRequests, windowMs) {
+  return (req, res, next) => {
+    const key = (req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown').split(',')[0].trim() + ':' + req.path;
+    const now = Date.now();
+    let bucket = rateBuckets.get(key);
+    if (!bucket || now - bucket.start > windowMs) { bucket = { count: 0, start: now }; rateBuckets.set(key, bucket); }
+    bucket.count++;
+    if (bucket.count > maxRequests) return res.status(429).json({ error: 'Too many requests, please slow down and try again shortly.' });
+    next();
+  };
+}
+setInterval(() => { const now = Date.now(); for (const [k, v] of rateBuckets) if (now - v.start > 10 * 60 * 1000) rateBuckets.delete(k); }, 5 * 60 * 1000);
+app.use('/api/', rateLimit(180, 60 * 1000)); // generous default cap for all API traffic
+app.use('/api/returns', rateLimit(20, 60 * 1000)); // stricter cap on return submissions specifically
+app.use('/api/admin/login', rateLimit(10, 60 * 1000)); // brute-force protection on login
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -274,8 +294,22 @@ async function logActivity(req, action, details) {
   } catch(e) {}
 }
 
+// Bcrypt with a per-password random salt for all NEW passwords (replaces the old fast
+// SHA-256 + static-salt scheme, which is weak against brute-force/rainbow-table attacks).
 function hashPassword(password) {
+  return bcrypt.hashSync(password, 10);
+}
+function legacyHashPassword(password) {
   return crypto.createHash('sha256').update(password + 'goreturn_salt_2026').digest('hex');
+}
+// Verifies against either a bcrypt hash or an old-format legacy hash. On a successful legacy
+// match, transparently re-hashes with bcrypt and returns the new hash so the caller can persist
+// it — existing users get silently upgraded to the stronger scheme the next time they log in.
+function verifyPassword(password, storedHash) {
+  if (!storedHash) return { ok: false };
+  if (storedHash.startsWith('$2')) return { ok: bcrypt.compareSync(password, storedHash) };
+  const ok = legacyHashPassword(password) === storedHash;
+  return { ok, upgradedHash: ok ? hashPassword(password) : null };
 }
 
 async function authenticateRequest(req, res, next) {
@@ -286,6 +320,17 @@ async function authenticateRequest(req, res, next) {
   const member = await pool.query('SELECT * FROM team_members WHERE session_token=$1', [token]);
   if (member.rows.length > 0) { req.user = member.rows[0]; return next(); }
   return res.status(401).json({ error: 'Invalid session' });
+}
+
+// Platform-owner-only routes (cross-merchant actions: plan changes, free access, app-wide backups).
+// Uses the real logged-in session (x-auth-token), never a shared static secret.
+async function requireOwner(req, res, next) {
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.status(401).json({ error: 'Login required' });
+  const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
+  if (!admin.rows.length || admin.rows[0].role !== 'owner') return res.status(403).json({ error: 'Owner access required' });
+  req.user = admin.rows[0];
+  next();
 }
 
 const ALLOWED_ADMIN_EMAIL = 'ajeetkumar.saas@gmail.com';
@@ -346,15 +391,20 @@ function otpEmailHtml(otp, name) {
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  const hash = hashPassword(password);
   let user = null, userType = '';
-  const admin = await pool.query('SELECT * FROM admin_users WHERE email=$1 AND password_hash=$2', [email, hash]);
+  const admin = await pool.query('SELECT * FROM admin_users WHERE email=$1', [email]);
   if (admin.rows.length > 0) { user = admin.rows[0]; userType = 'admin'; }
   else {
-    const member = await pool.query('SELECT * FROM team_members WHERE email=$1 AND password_hash=$2', [email, hash]);
+    const member = await pool.query('SELECT * FROM team_members WHERE email=$1', [email]);
     if (member.rows.length > 0) { user = member.rows[0]; userType = 'member'; }
   }
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+  const check = verifyPassword(password, user.password_hash);
+  if (!check.ok) return res.status(401).json({ error: 'Invalid email or password' });
+  if (check.upgradedHash) {
+    const table = userType === 'admin' ? 'admin_users' : 'team_members';
+    pool.query(`UPDATE ${table} SET password_hash=$1 WHERE id=$2`, [check.upgradedHash, user.id]).catch(()=>{});
+  }
   const otp = generateOTP();
   otpStore[email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
   const sent = await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, user.name));
@@ -1316,7 +1366,18 @@ app.patch('/api/returns/:id', async (req, res) => {
     try {
       const st = await pool.query('SELECT shiprocket_connected, shiprocket_auto_pickup FROM shopify_stores WHERE shop_domain=$1', [ret.shop_domain]);
       if (st.rows[0]?.shiprocket_connected && st.rows[0]?.shiprocket_auto_pickup) {
-        createShiprocketPickup(ret.shop_domain, ret).catch(e => console.log('Auto-pickup failed:', e.message));
+        createShiprocketPickup(ret.shop_domain, ret).catch(async e => {
+          console.log('Auto-pickup failed:', e.message);
+          try {
+            await pool.query(`UPDATE returns SET pickup_status='pickup_failed' WHERE id=$1`, [ret.id]);
+            const storeRow = await pool.query('SELECT store_email FROM shopify_stores WHERE shop_domain=$1', [ret.shop_domain]);
+            const notifyTo = storeRow.rows[0]?.store_email;
+            if (notifyTo) {
+              sendEmail(notifyTo, `Action needed: Pickup failed for return #${ret.id}`,
+                `<div style="font-family:sans-serif;padding:20px"><h3>Shiprocket auto-pickup failed</h3><p>Return #${ret.id} (Order ${ret.order_number||ret.order_id}) was approved but the automatic Shiprocket pickup could not be scheduled.</p><p>Reason: ${e.message}</p><p>Please open GoReturn and trigger the pickup manually for this return.</p></div>`);
+            }
+          } catch(e2) { console.log('Auto-pickup failure notification error:', e2.message); }
+        });
       }
     } catch(e) {}
   }
@@ -1646,32 +1707,22 @@ app.post('/api/logistics/settings', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Admin APIs
-const ADMIN_KEY = process.env.ADMIN_KEY || 'goreturn2026admin';
+// Admin APIs — gated by requireOwner (real logged-in session), not a shared secret
 
-function checkAdmin(req, res) {
-  const key = req.body?.admin_key || req.query?.admin_key;
-  if (key !== ADMIN_KEY) { res.status(403).json({ error: 'Unauthorized' }); return false; }
-  return true;
-}
-
-app.post('/api/admin/change-plan', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.post('/api/admin/change-plan', requireOwner, async (req, res) => {
   const { shop, plan } = req.body;
   await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan, shop]);
   await logActivity(req, 'Plan Changed', `${shop} → ${plan}`);
   res.json({ ok: true });
 });
 
-app.post('/api/admin/free-access', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.post('/api/admin/free-access', requireOwner, async (req, res) => {
   const { shop, plan, duration_days } = req.body;
   await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan || 'free', shop]);
   res.json({ ok: true, shop, plan, duration_days });
 });
 
-app.get('/api/admin/offers', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.get('/api/admin/offers', requireOwner, async (req, res) => {
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS offers (
       id SERIAL PRIMARY KEY,
@@ -1688,8 +1739,7 @@ app.get('/api/admin/offers', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/admin/offers', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.post('/api/admin/offers', requireOwner, async (req, res) => {
   const { code, type, value, max_uses } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS offers (
@@ -1707,8 +1757,7 @@ app.post('/api/admin/offers', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch('/api/admin/offers/:id', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.patch('/api/admin/offers/:id', requireOwner, async (req, res) => {
   const { active } = req.body;
   const r = await pool.query('UPDATE offers SET active=$1 WHERE id=$2 RETURNING *', [active, req.params.id]);
   res.json(r.rows[0]);
@@ -2002,15 +2051,41 @@ function verifyShopifyHmac(req) {
 }
 
 // Mandatory Shopify Compliance Webhooks
-app.post('/api/webhooks/customers/data_request', (req, res) => {
+// GoReturn is a data processor here — the merchant (shop) is the data controller. So
+// data_request compiles the customer's records and emails them to the merchant to forward,
+// and redact requests actually scrub the data rather than just acknowledging the webhook.
+app.post('/api/webhooks/customers/data_request', async (req, res) => {
   if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
-  console.log('Customer data request webhook received');
+  try {
+    const { shop_domain, customer } = req.body || {};
+    console.log('Customer data request webhook:', shop_domain, customer?.email);
+    if (shop_domain && customer?.email) {
+      const r = await pool.query('SELECT * FROM returns WHERE shop_domain=$1 AND customer_email=$2', [shop_domain, customer.email]);
+      if (r.rows.length) {
+        const store = await pool.query('SELECT store_email FROM shopify_stores WHERE shop_domain=$1', [shop_domain]);
+        const notifyTo = store.rows[0]?.store_email || ALLOWED_ADMIN_EMAIL;
+        const rows = r.rows.map(x => `Return #${x.id} — Order ${x.order_number||x.order_id} — ${x.product_name} — ${x.status} — ${x.created_at}`).join('<br>');
+        sendEmail(notifyTo, `Customer Data Request - ${customer.email}`, `<div style="font-family:sans-serif;padding:20px"><h3>Shopify Customer Data Request</h3><p>Customer: ${customer.email}</p><p>Records found in GoReturn for ${shop_domain}:</p><p>${rows}</p><p style="color:#888;font-size:12px">Please forward this to the customer per Shopify's GDPR requirements.</p></div>`);
+      }
+    }
+  } catch(e) { console.log('data_request error:', e.message); }
   res.status(200).json({ ok: true });
 });
 
-app.post('/api/webhooks/customers/redact', (req, res) => {
+app.post('/api/webhooks/customers/redact', async (req, res) => {
   if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
-  console.log('Customer redact webhook received');
+  try {
+    const { shop_domain, customer } = req.body || {};
+    console.log('Customer redact webhook:', shop_domain, customer?.email);
+    if (shop_domain && customer?.email) {
+      // Scrub PII but keep the row for the merchant's own accounting/order history
+      await pool.query(
+        `UPDATE returns SET customer_name='[redacted]', customer_email='[redacted]', customer_phone='[redacted]', reason_detail='', images=''
+         WHERE shop_domain=$1 AND customer_email=$2`,
+        [shop_domain, customer.email]
+      );
+    }
+  } catch(e) { console.log('customers/redact error:', e.message); }
   res.status(200).json({ ok: true });
 });
 
@@ -2019,6 +2094,9 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   console.log('Shop redact webhook received');
   const shopDomain = req.body?.shop_domain;
   if (shopDomain) {
+    try { await pool.query('DELETE FROM returns WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
+    try { await pool.query('DELETE FROM store_settings WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
+    try { await pool.query('DELETE FROM team_members WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
     try { await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
   }
   res.status(200).json({ ok: true });
@@ -2040,20 +2118,33 @@ app.post('/api/webhooks/app-uninstalled', async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
 
+// Debug/support endpoints — gated by a dedicated DEBUG_KEY env var (never hardcoded, never the
+// same secret used anywhere else). Fails CLOSED: if DEBUG_KEY isn't set in the environment, these
+// routes refuse every request rather than falling back to a guessable default.
+function checkDebugKey(req, res) {
+  const expected = process.env.DEBUG_KEY;
+  const key = req.query?.key;
+  if (!expected || !key || key !== expected) { res.status(403).json({ error: 'Unauthorized' }); return false; }
+  return true;
+}
+
 app.get('/api/debug/reset-store', async (req, res) => {
-  const { shop, key } = req.query;
-  if (key !== 'goreturn2026admin') return res.status(403).json({ error: 'invalid key' });
+  if (!checkDebugKey(req, res)) return;
+  const { shop } = req.query;
   if (!shop) return res.json({ error: 'shop required' });
   await pool.query('DELETE FROM shopify_stores WHERE shop_domain=$1', [shop]);
   res.json({ ok: true, deleted: shop });
 });
 
-app.get('/api/debug/last-exchange', (req, res) => res.json(lastExchange));
+app.get('/api/debug/last-exchange', (req, res) => {
+  if (!checkDebugKey(req, res)) return;
+  res.json(lastExchange);
+});
 
 // Force re-auth: redirects store through OAuth to get fresh expiring token
 app.get('/api/auth/reauth', (req, res) => {
-  const { shop, key } = req.query;
-  if (key !== 'goreturn2026admin') return res.status(403).send('invalid key');
+  if (!checkDebugKey(req, res)) return;
+  const { shop } = req.query;
   if (!shop) return res.status(400).send('shop required');
   const redirectUri = encodeURIComponent(`${APP_URL}/api/auth/callback`);
   const scopes = 'read_orders,write_orders,read_customers,read_products,read_inventory';
@@ -2062,8 +2153,8 @@ app.get('/api/auth/reauth', (req, res) => {
 });
 
 app.get('/api/debug/force-refresh', async (req, res) => {
-  const { shop, key } = req.query;
-  if (key !== 'goreturn2026admin') return res.status(403).json({ error: 'invalid key' });
+  if (!checkDebugKey(req, res)) return;
+  const { shop } = req.query;
   const sr = await pool.query('SELECT refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return res.json({ error: 'store not in db' });
   const rt = sr.rows[0].refresh_token;
@@ -2075,6 +2166,7 @@ app.get('/api/debug/force-refresh', async (req, res) => {
 });
 
 app.get('/api/debug/shop-check', async (req, res) => {
+  if (!checkDebugKey(req, res)) return;
   const { shop } = req.query;
   if (!shop) return res.json({ error: 'shop param required' });
   const sr = await pool.query('SELECT shop_domain, store_name, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
@@ -2157,8 +2249,7 @@ async function runDataBackup(triggeredManually) {
 }
 
 // Manual on-demand backup trigger (admin only)
-app.post('/api/admin/backup-now', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.post('/api/admin/backup-now', requireOwner, async (req, res) => {
   const result = await runDataBackup(true);
   res.json(result);
 });

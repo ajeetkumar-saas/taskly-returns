@@ -909,10 +909,9 @@ async function disconnectProvider(provider){if(!confirm(`Disconnect ${provider}?
 
 async function saveLogisticsSettings(){if(!currentShop)return;const defaultProvider=document.getElementById('defaultProvider').value;const autoPickup=document.getElementById('autoPickup').checked;try{await fetch('/api/logistics/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,default_provider:defaultProvider,auto_pickup:autoPickup})});showAlert('Settings saved','success');}catch(e){showAlert('Error','error');}}
 
-// Admin
-const AK='goreturn2026admin';
+// Admin — nav visibility and access are driven entirely by the real logged-in session's role
+// (currentRole, set from /api/admin/session), never a client-side secret or localStorage flag.
 let allStoresList=[];
-function checkAdmin(){const p=new URLSearchParams(location.search);if(p.get('admin')===AK)localStorage.setItem('isAdmin','true');if(localStorage.getItem('isAdmin')==='true')document.getElementById('adminNav').style.display='flex';}
 
 function showAdminTab(tab){
   ['stores','storedata','activity','access'].forEach(t=>{
@@ -1012,8 +1011,8 @@ async function loadActivityLog(){
   }catch(e){console.log('Activity log error:',e);}
 }
 
-async function changePlan(shop,plan){await fetch('/api/admin/change-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Plan changed to ${plan}`,'success');}
-async function giveFreePlan(){const shop=document.getElementById('freeStore').value.trim(),plan=document.getElementById('freePlan').value;if(!shop)return showAlert('Enter domain','error');await fetch('/api/admin/free-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop,plan,admin_key:AK})});showAlert(`Free access given!`,'success');}
+async function changePlan(shop,plan){await fetch('/api/admin/change-plan',{method:'POST',headers:{'Content-Type':'application/json',...getAuthHeaders()},body:JSON.stringify({shop,plan})});showAlert(`Plan changed to ${plan}`,'success');}
+async function giveFreePlan(){const shop=document.getElementById('freeStore').value.trim(),plan=document.getElementById('freePlan').value;if(!shop)return showAlert('Enter domain','error');await fetch('/api/admin/free-access',{method:'POST',headers:{'Content-Type':'application/json',...getAuthHeaders()},body:JSON.stringify({shop,plan})});showAlert(`Free access given!`,'success');}
 
 // Store Analytics
 let orderTrendChartObj;
@@ -1060,7 +1059,7 @@ const ROLE_ACCESS = {
   admin: ['dashboard','returns','exchanges','orders','analytics','export','stores','policies','reasons','logistics','locations','notifications','automation','promotions','webhooks','settings','team','help','fraud','pincode-risk','store-analytics'],
   viewer: ['dashboard','returns','exchanges','orders','analytics','export','help']
 };
-function roleCanAccess(page){if(localStorage.getItem('isAdmin')==='true')return true;const allowed=ROLE_ACCESS[currentRole]||ROLE_ACCESS.owner;return allowed==='all'||allowed.includes(page);}
+function roleCanAccess(page){if(currentRole==='owner')return true;const allowed=ROLE_ACCESS[currentRole]||ROLE_ACCESS.owner;return allowed==='all'||allowed.includes(page);}
 function applyRoleAccess(){
   // Hide nav items the current role cannot access (page parsed from onclick)
   document.querySelectorAll('.nav-item').forEach(el=>{
@@ -1072,10 +1071,10 @@ function applyRoleAccess(){
     el.style.display=roleCanAccess(p)?'':'none';
   });
 }
-function canAccess(page){if(localStorage.getItem('isAdmin')==='true')return true;if(!roleCanAccess(page))return false;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;return allowed.includes(page);}
+function canAccess(page){if(currentRole==='owner')return true;if(!roleCanAccess(page))return false;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;return allowed.includes(page);}
 function showUpgrade(feature){const planNeeded={exchanges:'Starter ($11.99/mo)',analytics:'Starter ($11.99/mo)',export:'Starter ($11.99/mo)',locations:'Starter ($11.99/mo)',notifications:'Starter ($11.99/mo)',automation:'Growth ($23.99/mo)',promotions:'Growth ($23.99/mo)',webhooks:'Pro ($47.99/mo)'}[feature]||'Starter';
 document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-upgrade').classList.add('active');document.getElementById('pageTitle').textContent='Upgrade Required';document.getElementById('upgradeFeature').textContent=feature.charAt(0).toUpperCase()+feature.slice(1);document.getElementById('upgradePlan').textContent=planNeeded;}
-function applyPlanLocks(){const navItems=document.querySelectorAll('.nav-item');navItems.forEach(n=>{const onclick=n.getAttribute('onclick');if(!onclick)return;const match=onclick.match(/showPage\('(.+?)'\)/);if(!match)return;const page=match[1];if(page==='admin')return;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;if(!allowed.includes(page)&&localStorage.getItem('isAdmin')!=='true'){n.style.opacity='0.5';const existing=n.querySelector('.nav-lock');if(!existing){const lock=document.createElement('span');lock.className='nav-lock';lock.innerHTML='<i class="fas fa-lock" style="font-size:9px"></i>';lock.style.cssText='margin-left:auto;color:var(--gray-500);font-size:9px';n.appendChild(lock);}}else{n.style.opacity='1';const lock=n.querySelector('.nav-lock');if(lock)lock.remove();}});}
+function applyPlanLocks(){const navItems=document.querySelectorAll('.nav-item');navItems.forEach(n=>{const onclick=n.getAttribute('onclick');if(!onclick)return;const match=onclick.match(/showPage\('(.+?)'\)/);if(!match)return;const page=match[1];if(page==='admin')return;const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;if(!allowed.includes(page)&&currentRole!=='owner'){n.style.opacity='0.5';const existing=n.querySelector('.nav-lock');if(!existing){const lock=document.createElement('span');lock.className='nav-lock';lock.innerHTML='<i class="fas fa-lock" style="font-size:9px"></i>';lock.style.cssText='margin-left:auto;color:var(--gray-500);font-size:9px';n.appendChild(lock);}}else{n.style.opacity='1';const lock=n.querySelector('.nav-lock');if(lock)lock.remove();}});}
 
 // Automation Rules
 async function loadRules(){try{const r=await fetch('/api/automation/rules?shop='+currentShop);const d=await r.json();const tb=document.getElementById('rulesTb');if(!d.length){tb.innerHTML='<tr><td colspan="5" class="empty"><i class="fas fa-robot"></i>No rules</td></tr>';return;}tb.innerHTML=d.map(x=>`<tr><td><strong>${x.name}</strong></td><td>${x.condition_field} ${x.condition_operator} ${x.condition_value}</td><td><span class="badge badge-approved">${x.action_type}</span></td><td><span class="badge badge-${x.active?'approved':'archived'}">${x.active?'Active':'Off'}</span></td><td><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="deleteRule(${x.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('');}catch(e){}}
@@ -1128,7 +1127,7 @@ function checkDashboardAuth(){
   if(!token){window.location.href='/login';return;}
   fetch('/api/admin/session',{headers:{'x-auth-token':token}}).then(r=>r.json()).then(d=>{
     if(!d.loggedIn){localStorage.removeItem('goreturn_token');localStorage.removeItem('goreturn_user');window.location.href='/login';}
-    else{currentRole=d.user.role||'owner';applyRoleAccess();const u=document.getElementById('loggedInUser');u.style.display='block';u.innerHTML='<i class="fas fa-user-circle"></i> '+d.user.name+'<br><span style="color:#818CF8;font-size:10px">'+d.user.role.toUpperCase()+'</span>';}
+    else{currentRole=d.user.role||'owner';applyRoleAccess();const u=document.getElementById('loggedInUser');u.style.display='block';u.innerHTML='<i class="fas fa-user-circle"></i> '+d.user.name+'<br><span style="color:#818CF8;font-size:10px">'+d.user.role.toUpperCase()+'</span>';if(currentRole==='owner')document.getElementById('adminNav').style.display='flex';}
   }).catch(()=>{});
 }
 
@@ -1203,7 +1202,6 @@ async function deleteTeamMember(id){
 const params=new URLSearchParams(location.search);
 if(params.get('connected'))showAlert('Store connected!','success');
 checkDashboardAuth();
-checkAdmin();
 loadStores().then(()=>{checkShiprocket();checkOnboarding();return loadReturns();}).then(()=>renderDashCharts());
 </script>
 </body>
