@@ -8,18 +8,15 @@ const { Pool } = require('pg');
 
 let lastEmailError = '';
 let lastExchange = { stage: 'none' };
-async function sendEmail(to, subject, html) {
+async function sendEmail(to, subject, html, attachments) {
   if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
   try {
+    const body = { from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>', to: [to], subject, html };
+    if (attachments && attachments.length) body.attachments = attachments;
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>',
-        to: [to],
-        subject,
-        html
-      })
+      body: JSON.stringify(body)
     });
     const d = await r.json();
     if (!r.ok || d.error) { lastEmailError = d.message || d.error?.message || 'Send failed'; console.log('Email error:', lastEmailError); return false; }
@@ -2114,5 +2111,55 @@ app.use(express.static(path.join(__dirname, '../client/build'), { index: false }
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
 
+// ===== AUTOMATIC DATA BACKUP =====
+// Protects against losing all data if the Railway database is ever corrupted, deleted, or the
+// project is lost. Runs daily and emails a JSON snapshot of all business data (returns, stores,
+// settings, team) to the admin's inbox — an off-site copy independent of Railway.
+// Access tokens / passwords are deliberately excluded; reconnecting a store just needs a re-auth.
+async function runDataBackup(triggeredManually) {
+  try {
+    const tables = ['shopify_stores', 'returns', 'store_settings', 'team_members', 'admin_users', 'activity_log'];
+    const dump = {};
+    for (const t of tables) {
+      const r = await pool.query(`SELECT * FROM ${t}`);
+      dump[t] = r.rows.map(row => {
+        const clean = { ...row };
+        delete clean.access_token; delete clean.refresh_token; delete clean.password_hash;
+        delete clean.shiprocket_password; delete clean.shiprocket_token; delete clean.session_token;
+        delete clean.invite_token; delete clean.clickpost_api_key; delete clean.shadowfax_client_secret;
+        delete clean.delhivery_api_key; delete clean.xpressbees_api_token; delete clean.wareiq_client_secret;
+        return clean;
+      });
+    }
+    dump._meta = { generated_at: new Date().toISOString(), version: '3.6.0-features' };
+    const json = JSON.stringify(dump, null, 2);
+    const base64 = Buffer.from(json).toString('base64');
+    const dateStr = new Date().toISOString().split('T')[0];
+    const ok = await sendEmail(
+      ALLOWED_ADMIN_EMAIL,
+      `GoReturn Daily Backup - ${dateStr}`,
+      `<div style="font-family:sans-serif;padding:20px"><h2>GoReturn Data Backup</h2><p>Automatic backup for ${dateStr}.</p><p>Stores: ${dump.shopify_stores.length} · Returns: ${dump.returns.length}</p><p style="color:#888;font-size:12px">Keep this email safe — it's your off-site recovery copy. Access tokens are excluded for security; reconnect stores via Shopify re-auth if ever needed.</p></div>`,
+      [{ filename: `goreturn-backup-${dateStr}.json`, content: base64 }]
+    );
+    console.log(`Backup ${triggeredManually ? '(manual)' : '(scheduled)'} ${ok ? 'sent' : 'FAILED to send'} — ${dump.returns.length} returns, ${dump.shopify_stores.length} stores`);
+    return { ok, returns: dump.returns.length, stores: dump.shopify_stores.length };
+  } catch(e) {
+    console.log('Backup error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// Manual on-demand backup trigger (admin only)
+app.post('/api/admin/backup-now', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const result = await runDataBackup(true);
+  res.json(result);
+});
+
 const PORT = process.env.PORT || 3001;
-initDB().then(() => app.listen(PORT, () => console.log('GoReturn v3.0 running on port ' + PORT)));
+initDB().then(() => {
+  app.listen(PORT, () => console.log('GoReturn v3.0 running on port ' + PORT));
+  // First backup 2 min after boot (lets DB settle), then every 24 hours
+  setTimeout(() => runDataBackup(false), 2 * 60 * 1000);
+  setInterval(() => runDataBackup(false), 24 * 60 * 60 * 1000);
+});
