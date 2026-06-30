@@ -808,20 +808,20 @@ function openStore(shop){const sw=document.getElementById('storeSwitcher');if(sw
 function switchStore(shop){currentShop=shop;localStorage.setItem('gr_current_shop',shop);const st=allStores.find(x=>x.shop_domain===shop);currentPlan=st?.plan||'free';document.getElementById('portalLink').href=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalLink').textContent=location.origin+'/return.html?shop='+currentShop;document.getElementById('portalPreview').href=location.origin+'/return.html?shop='+currentShop;applyPlanLocks();loadReturns().then(()=>{if(typeof renderDashCharts==='function')renderDashCharts();});if(typeof loadAnalytics==='function')loadAnalytics(30);}
 function connectShop(){const s=document.getElementById('shopDomain').value.trim();if(!s)return showAlert('Enter store domain','error');location.href='/api/auth/shopify?shop='+s;}
 
-async function loadReturns(){const url=currentShop?'/api/returns?shop='+encodeURIComponent(currentShop):'/api/returns';const r=await fetch(url);allReturns=await r.json();updateStats();renderReturns();renderExchanges();renderRecent();}
+async function loadReturns(){const url=currentShop?'/api/returns?shop='+encodeURIComponent(currentShop):'/api/returns';const headers=currentShop?await shopAuthHeaders():getAuthHeaders();const r=await fetch(url,{headers});allReturns=r.ok?await r.json():[];updateStats();renderReturns();renderExchanges();renderRecent();}
 function updateStats(){const filtered=filterByDate(allReturns,globalDate);const t=filtered.length,p=filtered.filter(r=>r.status==='pending').length,a=filtered.filter(r=>r.status==='approved').length,i=filtered.filter(r=>r.status==='inspected').length,rf=filtered.filter(r=>r.status==='refunded').length,rj=filtered.filter(r=>r.status==='rejected').length,ex=filtered.filter(r=>r.type==='exchange').length,amt=filtered.reduce((s,r)=>s+parseFloat(r.amount||0),0),saved=filtered.filter(r=>r.type==='exchange').reduce((s,r)=>s+parseFloat(r.amount||0),0);
 document.getElementById('sTotal').textContent=t;document.getElementById('sPending').textContent=p;document.getElementById('sApproved').textContent=a;document.getElementById('sInspected').textContent=i;document.getElementById('sRefunded').textContent=rf;document.getElementById('sRejected').textContent=rj;document.getElementById('sExchanges').textContent=ex;document.getElementById('sRevSaved').textContent='$'+Math.round(saved).toLocaleString('en-IN');document.getElementById('pendingBadge').textContent=p;}
 
 function searchFilter(items,query){if(!query)return items;const q=query.toLowerCase();return items.filter(r=>(r.order_number||'').toLowerCase().includes(q)||(r.customer_name||'').toLowerCase().includes(q)||(r.customer_email||'').toLowerCase().includes(q)||(r.product_name||'').toLowerCase().includes(q)||(r.reason||'').toLowerCase().includes(q)||(r.order_id||'').toString().includes(q));}
 function renderReturns(){const returns=allReturns.filter(r=>r.type!=='exchange');let f=curFilter==='all'?returns:returns.filter(r=>r.status===curFilter);f=filterByDate(f,curDate);const sq=document.getElementById('returnSearch');if(sq)f=searchFilter(f,sq.value);
 const tb=document.getElementById('returnsTb');if(!f.length){tb.innerHTML='<tr><td colspan="11" class="empty"><i class="fas fa-inbox"></i>No returns found</td></tr>';return;}
-tb.innerHTML=f.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${r.order_number||r.order_id||'-'}</td><td><div>${r.customer_name||'-'}</div><div style="font-size:10px;color:var(--gray-400)">${r.customer_email||''}</div></td><td>${r.product_name||'-'}${r.images?'<br><span style="font-size:10px;color:var(--info);cursor:pointer" onclick="viewImages(\''+encodeURIComponent(r.images)+'\')"><i class="fas fa-image"></i> '+r.images.split('|||').filter(Boolean).length+' photo(s)</span>':''}</td><td>${fmtReason(r.reason)}</td><td><span class="badge badge-pending">Return</span></td><td style="font-size:11px">${fmtRefund(r.refund_method)}</td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
+tb.innerHTML=f.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${esc(r.order_number||r.order_id||'-')}</td><td><div>${esc(r.customer_name||'-')}</div><div style="font-size:10px;color:var(--gray-400)">${esc(r.customer_email||'')}</div></td><td>${esc(r.product_name||'-')}${r.images?'<br><span style="font-size:10px;color:var(--info);cursor:pointer" onclick="viewImages(\''+encodeURIComponent(r.images)+'\')"><i class="fas fa-image"></i> '+r.images.split('|||').filter(Boolean).length+' photo(s)</span>':''}</td><td>${fmtReason(r.reason)}</td><td><span class="badge badge-pending">Return</span></td><td style="font-size:11px">${fmtRefund(r.refund_method)}</td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
 
 function renderExchanges(){let ex=filterByDate(allReturns.filter(r=>r.type==='exchange'),exDate);const eq=document.getElementById('exchangeSearch');if(eq)ex=searchFilter(ex,eq.value);const tb=document.getElementById('exchangeTb');if(!ex.length){tb.innerHTML='<tr><td colspan="10" class="empty"><i class="fas fa-exchange-alt"></i>No exchanges</td></tr>';return;}
-tb.innerHTML=ex.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><strong>${r.exchange_product||'-'}</strong> ${r.exchange_variant?'('+r.exchange_variant+')':''}</td><td>${fmtReason(r.reason)}</td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
+tb.innerHTML=ex.map(r=>`<tr><td><strong>#${r.id}</strong></td><td>${esc(r.order_number||'-')}</td><td>${esc(r.customer_name||'-')}</td><td>${esc(r.product_name||'-')}</td><td><strong>${esc(r.exchange_product||'-')}</strong> ${r.exchange_variant?'('+esc(r.exchange_variant)+')':''}</td><td>${fmtReason(r.reason)}</td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
 
 function renderRecent(){const p=filterByDate(allReturns,globalDate).filter(r=>r.status==='pending').slice(0,5);const tb=document.getElementById('recentTb');if(!p.length){tb.innerHTML='<tr><td colspan="8" class="empty"><i class="fas fa-check-circle" style="color:var(--success)"></i>No pending</td></tr>';return;}
-tb.innerHTML=p.map(r=>`<tr><td>#${r.id}</td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><span class="badge badge-${r.type==='exchange'?'exchange':'pending'}">${r.type||'return'}</span></td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td><button class="action-btn" style="background:var(--success-light);color:var(--success)" onclick="upd(${r.id},'approved')"><i class="fas fa-check"></i></button><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="upd(${r.id},'rejected')"><i class="fas fa-times"></i></button></td></tr>`).join('');}
+tb.innerHTML=p.map(r=>`<tr><td>#${r.id}</td><td>${esc(r.order_number||'-')}</td><td>${esc(r.customer_name||'-')}</td><td>${esc(r.product_name||'-')}</td><td><span class="badge badge-${r.type==='exchange'?'exchange':'pending'}">${r.type||'return'}</span></td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td style="font-size:11px;color:var(--gray-400)">${fmtDate(r.created_at)}</td><td><button class="action-btn" style="background:var(--success-light);color:var(--success)" onclick="upd(${r.id},'approved')"><i class="fas fa-check"></i></button><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="upd(${r.id},'rejected')"><i class="fas fa-times"></i></button></td></tr>`).join('');}
 
 function getActions(r){
   if(r.status==='pending')return`<button class="action-btn" style="background:var(--success-light);color:var(--success)" onclick="upd(${r.id},'approved')">Approve</button><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="upd(${r.id},'rejected')">Reject</button>`;
@@ -843,7 +843,7 @@ function filterExDate(period,btn){exDate=period;document.querySelectorAll('#page
 function filterR(s,b){curFilter=s;document.querySelectorAll('#page-returns .filter-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderReturns();}
 function filterDate(d,b){curDate=d;document.querySelectorAll('.date-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderReturns();}
 function filterE(s,b){document.querySelectorAll('#page-exchanges .filter-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');const ex=allReturns.filter(r=>r.type==='exchange');const f=s==='all'?ex:ex.filter(r=>r.status===s);const tb=document.getElementById('exchangeTb');if(!f.length){tb.innerHTML='<tr><td colspan="10" class="empty">No exchanges</td></tr>';return;}
-tb.innerHTML=f.map(r=>`<tr><td>#${r.id}</td><td>${r.order_number||'-'}</td><td>${r.customer_name||'-'}</td><td>${r.product_name||'-'}</td><td><strong>${r.exchange_product||'-'}</strong></td><td>${fmtReason(r.reason)}</td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
+tb.innerHTML=f.map(r=>`<tr><td>#${r.id}</td><td>${esc(r.order_number||'-')}</td><td>${esc(r.customer_name||'-')}</td><td>${esc(r.product_name||'-')}</td><td><strong>${esc(r.exchange_product||'-')}</strong></td><td>${fmtReason(r.reason)}</td><td class="amount">$${Number(r.amount||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${r.status}">${r.status}</span></td><td style="font-size:11px">${fmtDate(r.created_at)}</td><td>${getActions(r)}</td></tr>`).join('');}
 
 async function loadOrders(){if(!currentShop)return;const tb=document.getElementById('ordersTb');tb.innerHTML='<tr><td colspan="7" class="empty"><i class="fas fa-spinner fa-spin"></i>Loading...</td></tr>';try{const r=await fetch('/api/shopify/orders?shop='+currentShop);const o=await r.json();if(!o.length){tb.innerHTML='<tr><td colspan="7" class="empty">No orders</td></tr>';return;}tb.innerHTML=o.map(o=>`<tr><td><strong>${o.name||'-'}</strong></td><td>${o.customer?o.customer.first_name+' '+o.customer.last_name:'-'}</td><td style="font-size:11px">${o.email||'-'}</td><td class="amount">$${Number(o.total_price||0).toLocaleString('en-IN')}</td><td><span class="badge badge-${o.financial_status==='paid'?'approved':'pending'}">${o.financial_status||'-'}</span></td><td><span class="badge badge-${o.fulfillment_status==='fulfilled'?'processed':'pending'}">${o.fulfillment_status||'unfulfilled'}</span></td><td style="font-size:11px">${fmtDate(o.created_at)}</td></tr>`).join('');}catch(e){tb.innerHTML='<tr><td colspan="7" class="empty">Error loading</td></tr>';}}
 
@@ -870,19 +870,20 @@ async function createReturn(){const data={order_id:document.getElementById('fOrd
 if(!data.customer_name)return showAlert('Customer name required','error');const r=await fetch('/api/returns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(r.ok){showAlert((modalType==='exchange'?'Exchange':'Return')+' created!','success');closeModal();loadReturns();}else showAlert('Failed','error');}
 
 async function upd(id,status){
+  const auth=await shopAuthHeaders();
   if(status==='refunded'){
     showAlert(`Processing refund for #${id} via Shopify...`,'success');
     try{
-      const r=await fetch('/api/returns/'+id+'/refund',{method:'POST',headers:{'Content-Type':'application/json'}});
+      const r=await fetch('/api/returns/'+id+'/refund',{method:'POST',headers:{'Content-Type':'application/json',...auth}});
       const d=await r.json();
       if(!r.ok){showAlert(`Refund failed for #${id}: ${d.error||'Unknown error'}`,'error');return;}
       showAlert(`#${id} refunded via Shopify`,'success');
     }catch(e){showAlert(`Refund failed for #${id}`,'error');}
     loadReturns();return;
   }
-  await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});showAlert(`#${id} → ${status}`,'success');loadReturns();
+  await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth},body:JSON.stringify({status})});showAlert(`#${id} → ${status}`,'success');loadReturns();
 }
-async function archive(id){await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archived:true})});showAlert(`#${id} archived`,'success');loadReturns();}
+async function archive(id){const auth=await shopAuthHeaders();await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth},body:JSON.stringify({archived:true})});showAlert(`#${id} archived`,'success');loadReturns();}
 
 function exportCSV(){window.open('/api/returns/export?shop='+currentShop,'_blank');}
 
@@ -931,7 +932,7 @@ async function loadAllStores(){
   const sel=document.getElementById('storeDataFilter');
   sel.innerHTML='<option value="all">All Stores ('+s.length+')</option>'+s.map(x=>'<option value="'+x.shop_domain+'">'+(x.store_name||x.shop_domain)+'</option>').join('');
   // Count returns per store
-  const retR=await fetch('/api/returns?shop=all');const rets=await retR.json();
+  const retR=await fetch('/api/returns?shop=all',{headers:getAuthHeaders()});const rets=retR.ok?await retR.json():[];
   const retCounts={};(Array.isArray(rets)?rets:[]).forEach(r=>{retCounts[r.shop_domain]=(retCounts[r.shop_domain]||0)+1;});
   tb.innerHTML=s.map(x=>`<tr>
     <td><strong>${x.store_name||'-'}</strong></td>
@@ -960,7 +961,7 @@ async function loadStoreData(){
   const days=dateSel?dateSel.value:'all';
   const url=shop==='all'?'/api/returns?shop=all':'/api/returns?shop='+shop;
   try{
-    const r=await fetch(url);const rets=await r.json();let data=Array.isArray(rets)?rets:[];
+    const r=await fetch(url,{headers:getAuthHeaders()});const rets=r.ok?await r.json():[];let data=Array.isArray(rets)?rets:[];
     if(days!=='all'){const cutoff=Date.now()-parseInt(days)*86400000;data=data.filter(x=>new Date(x.created_at).getTime()>=cutoff);}
     const returns=data.filter(x=>x.type!=='exchange'), exchanges=data.filter(x=>x.type==='exchange');
     const totalValue=data.reduce((s,x)=>s+parseFloat(x.amount||0),0);
@@ -985,7 +986,7 @@ async function loadStoreData(){
     tb.innerHTML=data.slice(0,100).map(x=>`<tr>
       <td style="font-size:11px">${x.shop_domain||'-'}</td>
       <td>#${x.order_number||x.order_id}</td>
-      <td>${x.customer_name||'-'}<div style="font-size:10px;color:var(--gray-400)">${x.customer_email||''}</div></td>
+      <td>${esc(x.customer_name||'-')}<div style="font-size:10px;color:var(--gray-400)">${esc(x.customer_email||'')}</div></td>
       <td style="font-size:11px">${(x.product_name||'').substring(0,30)}</td>
       <td><span class="badge badge-${x.type==='exchange'?'processed':'pending'}">${x.type||'return'}</span></td>
       <td>$${x.amount||0}</td>
@@ -1104,6 +1105,9 @@ async function loadPincodeRisk(){try{const r=await fetch('/api/analytics/pincode
 
 function viewImages(encoded){const imgs=decodeURIComponent(encoded).split('|||').filter(Boolean);if(!imgs.length)return showAlert('No images','error');const html=imgs.map(src=>src.startsWith('data:video')?'<video src="'+src+'" controls style="max-width:200px;max-height:200px;border-radius:8px"></video>':'<img src="'+src+'" style="max-width:200px;max-height:200px;border-radius:8px;object-fit:cover">').join('');const w=window.open('','_blank','width=600,height=400');w.document.write('<html><head><title>Return Images</title></head><body style="background:#111;display:flex;flex-wrap:wrap;gap:12px;padding:20px;align-items:center;justify-content:center">'+html+'</body></html>');}
 
+// Escapes any free-text/user-controlled field before it goes into an innerHTML template literal —
+// prevents stored XSS via return fields like customer name, product name, order number, etc.
+function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtReason(r){return{damaged:'Damaged',wrong_item:'Wrong Item',size_issue:'Size Issue',quality_issue:'Quality Issue',not_as_described:'Not As Described',changed_mind:'Changed Mind'}[r]||r||'-';}
 function fmtRefund(r){return{original:'Original Payment Method'}[r]||r||'-';}
 function fmtDate(d){if(!d)return'-';return new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
@@ -1119,6 +1123,14 @@ function skipOnboarding(){document.getElementById('onboarding').style.display='n
 // Auth check
 function getAuthToken(){return localStorage.getItem('goreturn_token');}
 function getAuthHeaders(){const t=getAuthToken();return t?{'x-auth-token':t}:{};}
+// Auth header for shop-scoped data calls (returns list/update/refund): when embedded in
+// Shopify, fetches a fresh App Bridge session token (these are short-lived, so a new one is
+// pulled per call) and sends it for the backend to verify; otherwise falls back to the
+// standalone-dashboard login session.
+async function shopAuthHeaders(){
+  if(window.shopify){try{const t=await shopify.idToken();if(t)return{'Authorization':'Bearer '+t};}catch(e){}}
+  return getAuthHeaders();
+}
 
 function checkDashboardAuth(){
   const token=getAuthToken();

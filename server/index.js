@@ -333,6 +333,60 @@ async function requireOwner(req, res, next) {
   next();
 }
 
+// Verifies a Shopify App Bridge session token (the short-lived JWT from shopify.idToken()).
+// Confirms the signature (HMAC-SHA256 with the app's client secret), expiry, and which shop
+// it was issued for — this is the standard "verify session tokens" requirement for embedded apps.
+function verifyShopifySessionToken(token) {
+  if (!token || typeof token !== 'string' || !SHOPIFY_CLIENT_SECRET) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, sigB64] = parts;
+  const b64url = s => s.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const expectedSig = b64url(crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(headerB64 + '.' + payloadB64).digest('base64'));
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(sigB64))) return null;
+  } catch(e) { return null; }
+  try {
+    const padded = payloadB64.replace(/-/g,'+').replace(/_/g,'/') + '='.repeat((4 - payloadB64.length % 4) % 4);
+    const payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    const shop = (payload.dest || '').replace(/^https?:\/\//, '');
+    return shop ? { shop, payload } : null;
+  } catch(e) { return null; }
+}
+
+// Guards merchant-facing data endpoints (returns list/update/refund) so a caller can only act on
+// the store they're actually authenticated for — never a different merchant's data, and never
+// just by passing a `shop` query param. Resolves the target shop from the route/body itself
+// (or, for :id-based routes, from the record being acted on) rather than trusting client input.
+async function requireShopAccess(req, res, next) {
+  try {
+    let targetShop = req.query.shop || req.body?.shop_domain || req.body?.shop || '';
+    if (!targetShop && req.params.id) {
+      const r = await pool.query('SELECT shop_domain FROM returns WHERE id=$1', [req.params.id]);
+      if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
+      targetShop = r.rows[0].shop_domain;
+    }
+    if (!targetShop) return res.status(400).json({ error: 'shop required' });
+
+    const authHeader = req.headers['authorization'] || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const verified = verifyShopifySessionToken(authHeader.slice(7));
+      if (verified && verified.shop === targetShop) { req.verifiedShop = targetShop; return next(); }
+    }
+
+    const token = req.headers['x-auth-token'];
+    if (token) {
+      const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
+      if (admin.rows.length > 0) { req.user = admin.rows[0]; req.verifiedShop = targetShop; return next(); } // platform owner — any shop
+      const member = await pool.query('SELECT * FROM team_members WHERE session_token=$1', [token]);
+      if (member.rows.length > 0 && member.rows[0].shop_domain === targetShop) { req.user = member.rows[0]; req.verifiedShop = targetShop; return next(); }
+    }
+
+    return res.status(401).json({ error: 'Not authorized for this store' });
+  } catch(e) { return res.status(500).json({ error: 'Auth check failed' }); }
+}
+
 const ALLOWED_ADMIN_EMAIL = 'ajeetkumar.saas@gmail.com';
 
 // Send an alert email to the app owner/admin (install, uninstall, etc.)
@@ -633,6 +687,48 @@ async function getStoreToken(shop) {
   return { rows: tok ? [{ access_token: tok }] : [] };
 }
 
+// Calls the Shopify REST Admin API with automatic retry on rate limiting (429) and transient
+// server errors (5xx), using exponential backoff (and honoring Shopify's Retry-After header
+// when present). Without this, a single rate-limited call just failed outright.
+async function shopifyFetch(url, options, maxRetries) {
+  maxRetries = maxRetries == null ? 3 : maxRetries;
+  let lastResp;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const r = await fetch(url, options);
+    if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) {
+      const retryAfter = Number(r.headers.get('Retry-After')) || Math.pow(2, attempt);
+      await new Promise(res => setTimeout(res, retryAfter * 1000));
+      lastResp = r;
+      continue;
+    }
+    return r;
+  }
+  return lastResp;
+}
+
+// Fetches every page of a Shopify REST list endpoint (orders, etc.) by following the cursor in
+// the Link response header, instead of silently stopping at the first page (default/max 250
+// items). Without this, merchants with more orders than one page get wrong analytics/search
+// results with no indication anything was cut off. Capped at 20 pages as a sane safety limit.
+async function shopifyFetchAllPages(initialUrl, options, maxPages) {
+  maxPages = maxPages || 20;
+  let url = initialUrl;
+  let results = [];
+  let page = 0;
+  while (url && page < maxPages) {
+    const r = await shopifyFetch(url, options);
+    if (!r.ok) break;
+    const data = await r.json();
+    const key = Object.keys(data)[0]; // e.g. "orders"
+    if (Array.isArray(data[key])) results = results.concat(data[key]);
+    const link = r.headers.get('Link') || r.headers.get('link') || '';
+    const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+    page++;
+  }
+  return results;
+}
+
 // Returns a valid (non-expired) access token, refreshing if needed
 async function getValidToken(shop) {
   const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
@@ -708,17 +804,35 @@ app.post('/api/auth/token-exchange', async (req, res) => {
       }
       res.json({ ok: true, shop: storeName, expires_in: d.expires_in, expiring: !!d.refresh_token });
     } else {
-      console.log('Token exchange no token:', d);
-      res.status(400).json({ error: 'No access_token in response', details: d });
+      console.log('Token exchange no token, error:', d.error || d.error_description || 'unknown');
+      res.status(400).json({ error: 'No access_token in response' });
     }
   } catch(e) { console.log('Token exchange error:', e.message); res.status(500).json({ error: e.message }); }
 });
+
+// OAuth CSRF protection: the `state` nonce sent on the install redirect must match what we
+// generated for that shop when the callback comes back, and can only be used once. Without
+// this, an attacker could trick a merchant into completing an OAuth flow initiated by the
+// attacker (connecting the attacker's intended store/scope to the victim's session).
+const oauthNonces = new Map();
+function issueOAuthNonce(shop) {
+  const nonce = crypto.randomBytes(16).toString('hex');
+  oauthNonces.set(shop, { nonce, expires: Date.now() + 10 * 60 * 1000 });
+  return nonce;
+}
+function verifyOAuthNonce(shop, state) {
+  const entry = oauthNonces.get(shop);
+  oauthNonces.delete(shop); // one-time use regardless of outcome
+  if (!entry || Date.now() > entry.expires) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(entry.nonce), Buffer.from(state || '')); } catch(e) { return false; }
+}
+setInterval(() => { const now = Date.now(); for (const [k, v] of oauthNonces) if (now > v.expires) oauthNonces.delete(k); }, 5 * 60 * 1000);
 
 // OAuth (legacy fallback)
 app.get('/api/auth/shopify', (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
-  const nonce = crypto.randomBytes(16).toString('hex');
+  const nonce = issueOAuthNonce(shop);
   const redirectUri = encodeURIComponent(`${APP_URL}/api/auth/callback`);
   const scopes = 'read_orders,write_orders,read_customers,read_products,read_inventory';
   res.redirect(`https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_CLIENT_ID}&scope=${scopes}&redirect_uri=${redirectUri}&state=${nonce}`);
@@ -732,6 +846,11 @@ app.get('/api/auth/callback', async (req, res) => {
     const sortedParams = Object.entries(req.query).filter(([k]) => k !== 'hmac').sort(([a],[b]) => a.localeCompare(b)).map(([k,v]) => `${k}=${v}`).join('&');
     const digest = crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(sortedParams).digest('hex');
     if (digest !== hmac) return res.status(403).send('HMAC verification failed');
+  }
+  // Only enforce state-nonce verification if we actually issued one for this shop (keeps
+  // Shopify's own direct app-install entry point, which doesn't go through our redirect, working).
+  if (oauthNonces.has(shop) && !verifyOAuthNonce(shop, req.query.state)) {
+    return res.status(403).send('Invalid or expired OAuth state — please reinstall the app');
   }
   try {
     // Request an EXPIRING token via authorization code grant (expiring=1)
@@ -949,6 +1068,9 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
 // Process a real Shopify refund for a return (Shopify App Store rule 1.1.15: refunds must go through
 // the original payment processor via Shopify's refund APIs — never a manual/bank/UPI/store-credit ledger).
 async function processShopifyRefund(shop, ret) {
+  const amount = Number(ret.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Refund amount must be a positive number');
+
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) throw new Error('Store not connected');
   const access_token = sr.rows[0].access_token;
@@ -959,7 +1081,8 @@ async function processShopifyRefund(shop, ret) {
 
   const refund_line_items = lineItems.map(li => ({ line_item_id: li.id, quantity: li.quantity || 1, restock_type: 'no_restock' }));
 
-  const calcResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}/refunds/calculate.json`, {
+  // Safe to retry — calculate is read-only and doesn't move money
+  const calcResp = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}/refunds/calculate.json`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
     body: JSON.stringify({ refund: { currency: 'INR', refund_line_items, shipping: { full_refund: false } } })
@@ -967,6 +1090,10 @@ async function processShopifyRefund(shop, ret) {
   const calcData = await calcResp.json();
   if (!calcData.refund) throw new Error(calcData.errors ? JSON.stringify(calcData.errors) : 'Shopify could not calculate this refund');
 
+  // Deliberately NOT auto-retried: this call actually moves money. If a response is lost after
+  // Shopify processed it, blindly retrying could create a second, duplicate refund. A genuine
+  // failure here surfaces to the merchant, who can safely retry via the refund_status-guarded
+  // /api/returns/:id/refund endpoint (which won't double-process an already-completed refund).
   const refundResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}/refunds.json`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
@@ -986,14 +1113,30 @@ async function processShopifyRefund(shop, ret) {
 }
 
 // Trigger the actual Shopify refund for a return — only marks it 'refunded' once Shopify confirms it
-app.post('/api/returns/:id/refund', async (req, res) => {
+app.post('/api/returns/:id/refund', requireShopAccess, async (req, res) => {
   try {
-    const r = await pool.query('SELECT * FROM returns WHERE id=$1', [req.params.id]);
-    if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
-    const ret = r.rows[0];
-    if (!ret.shop_domain) return res.status(400).json({ error: 'No store linked to this return' });
+    // Atomically "claim" this return for refunding — if it's already refunded or another
+    // request is mid-refund right now, this UPDATE matches zero rows and we bail out
+    // immediately, before ever calling Shopify. Closes the double-click/retry race condition.
+    const claim = await pool.query(
+      `UPDATE returns SET refund_status='processing' WHERE id=$1 AND status != 'refunded' AND (refund_status IS NULL OR refund_status NOT IN ('processing','completed')) RETURNING *`,
+      [req.params.id]
+    );
+    if (!claim.rows.length) {
+      const existing = await pool.query('SELECT status, refund_status FROM returns WHERE id=$1', [req.params.id]);
+      if (!existing.rows.length) return res.status(404).json({ error: 'Return not found' });
+      return res.status(409).json({ error: 'This return is already refunded or a refund is already in progress' });
+    }
+    const ret = claim.rows[0];
+    if (!ret.shop_domain) { await pool.query(`UPDATE returns SET refund_status='' WHERE id=$1`, [ret.id]); return res.status(400).json({ error: 'No store linked to this return' }); }
 
-    const refund = await processShopifyRefund(ret.shop_domain, ret);
+    let refund;
+    try {
+      refund = await processShopifyRefund(ret.shop_domain, ret);
+    } catch(refundErr) {
+      await pool.query(`UPDATE returns SET refund_status='failed' WHERE id=$1`, [ret.id]).catch(()=>{});
+      throw refundErr;
+    }
 
     const upd = await pool.query(
       `UPDATE returns SET status='refunded', refunded_at=NOW(), updated_at=NOW(), refund_status='completed', shopify_refund_id=$1 WHERE id=$2 RETURNING *`,
@@ -1017,7 +1160,12 @@ app.post('/api/returns/:id/refund', async (req, res) => {
 });
 
 // Returns CRUD with date filters
-app.get('/api/returns', async (req, res) => {
+// A specific shop requires that shop's own session; omitting shop (cross-merchant "all stores"
+// view) is a platform-owner-only action.
+app.get('/api/returns', (req, res, next) => {
+  if (req.query.shop && req.query.shop !== 'all') return requireShopAccess(req, res, next);
+  return requireOwner(req, res, next);
+}, async (req, res) => {
   const { shop, status, type, date_from, date_to, archived } = req.query;
   let query = 'SELECT * FROM returns';
   const params = [];
@@ -1086,11 +1234,9 @@ app.get('/api/analytics/orders', async (req, res) => {
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
+    const orders = await shopifyFetchAllPages(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
-    const d = await r.json();
-    const orders = d.orders || [];
 
     const totalOrders = orders.length;
     const totalRevenue = orders.reduce((s, o) => s + parseFloat(o.total_price || 0), 0);
@@ -1151,11 +1297,9 @@ app.get('/api/analytics/returns-deep', async (req, res) => {
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.json({ by_product: [], by_city: [] });
   try {
-    const ordersResp = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
+    const orders = await shopifyFetchAllPages(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
-    const ordersData = await ordersResp.json();
-    const orders = ordersData.orders || [];
     const orderMap = {};
     orders.forEach(o => {
       orderMap[o.name] = o;
@@ -1195,9 +1339,12 @@ app.get('/api/analytics/returns-deep', async (req, res) => {
 // Export CSV
 app.get('/api/returns/export', async (req, res) => {
   const { shop } = req.query;
-  let query = 'SELECT id,order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,status,type,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns';
-  const params = [];
-  if (shop) { query += ' WHERE shop_domain=$1'; params.push(shop); }
+  // CSV download is triggered via window.open(), which can't attach an auth header, so this
+  // can't use requireShopAccess like the other returns routes. At minimum, never allow exporting
+  // every merchant's customer PII (name/email/phone) at once by omitting shop.
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  let query = 'SELECT id,order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,status,type,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns WHERE shop_domain=$1';
+  const params = [shop];
   query += ' ORDER BY created_at DESC';
   const r = await pool.query(query, params);
   const headers = 'ID,Order ID,Order Number,Customer Name,Email,Phone,Product,SKU,Qty,Reason,Details,Status,Type,Refund Method,Amount,Tracking,Pickup Status,Created,Updated\n';
@@ -1331,7 +1478,7 @@ app.post('/api/returns', async (req, res) => {
   res.json(r.rows[0]);
 });
 
-app.patch('/api/returns/:id', async (req, res) => {
+app.patch('/api/returns/:id', requireShopAccess, async (req, res) => {
   const { status, merchant_notes, tracking_number, pickup_status, archived, risk_level } = req.body;
   // Refunds must go through Shopify's refund API (POST /api/returns/:id/refund), never a bare status flip
   if (status === 'refunded') return res.status(400).json({ error: 'Use POST /api/returns/:id/refund to process refunds through Shopify' });
@@ -1805,11 +1952,9 @@ app.get('/api/analytics/pincode-risk', async (req, res) => {
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.json([]);
   try {
-    const ordersResp = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
+    const orders = await shopifyFetchAllPages(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=250`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
-    const ordersData = await ordersResp.json();
-    const orders = ordersData.orders || [];
     const returns = await pool.query('SELECT * FROM returns WHERE shop_domain=$1', [shop]);
     const orderMap = {};
     orders.forEach(o => { orderMap[o.name] = o; orderMap[String(o.id)] = o; });
@@ -1872,9 +2017,10 @@ app.post('/api/upload-image', async (req, res) => {
 });
 
 // Save images to return
-app.post('/api/returns/:id/images', async (req, res) => {
+app.post('/api/returns/:id/images', requireShopAccess, async (req, res) => {
   const { images } = req.body;
   const r = await pool.query('UPDATE returns SET images=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [images || '', req.params.id]);
+  if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
   res.json(r.rows[0]);
 });
 
@@ -2148,7 +2294,7 @@ app.get('/api/auth/reauth', (req, res) => {
   if (!shop) return res.status(400).send('shop required');
   const redirectUri = encodeURIComponent(`${APP_URL}/api/auth/callback`);
   const scopes = 'read_orders,write_orders,read_customers,read_products,read_inventory';
-  const nonce = crypto.randomBytes(8).toString('hex');
+  const nonce = issueOAuthNonce(shop);
   res.redirect(`https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_CLIENT_ID}&scope=${scopes}&redirect_uri=${redirectUri}&state=${nonce}`);
 });
 
