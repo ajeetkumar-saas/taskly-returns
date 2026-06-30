@@ -178,6 +178,26 @@ async function initDB() {
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_connected BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_auto_pickup BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shiprocket_pickup_location TEXT DEFAULT ''`);
+    // ClickPost
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS clickpost_api_key TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS clickpost_connected BOOLEAN DEFAULT false`);
+    // Shadowfax
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shadowfax_client_id TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shadowfax_client_secret TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS shadowfax_connected BOOLEAN DEFAULT false`);
+    // Delhivery
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS delhivery_api_key TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS delhivery_connected BOOLEAN DEFAULT false`);
+    // XpressBees
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS xpressbees_api_token TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS xpressbees_connected BOOLEAN DEFAULT false`);
+    // WareIQ
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS wareiq_client_id TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS wareiq_client_secret TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS wareiq_connected BOOLEAN DEFAULT false`);
+    // Logistics config
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS default_logistics VARCHAR(50) DEFAULT 'shiprocket'`);
+    await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS logistics_auto_pickup BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS portal_color VARCHAR(20) DEFAULT '#4F46E5'`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS portal_banner TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS return_window INTEGER DEFAULT 14`);
@@ -192,12 +212,15 @@ async function initDB() {
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS risk_level VARCHAR(20) DEFAULT ''`);
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS images TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS line_items TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_status VARCHAR(20) DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS shopify_refund_id VARCHAR(255) DEFAULT ''`);
     await pool.query(`CREATE TABLE IF NOT EXISTS store_settings (
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) UNIQUE NOT NULL,
       return_reasons TEXT DEFAULT 'Damaged Product,Wrong Item Received,Size/Fit Issue,Quality Not As Expected,Not As Described,Changed My Mind',
       exchange_reasons TEXT DEFAULT 'Wrong Size,Wrong Color,Want Different Product',
-      refund_methods TEXT DEFAULT 'Original Payment Method,Bank Transfer,Store Credit,UPI',
+      refund_methods TEXT DEFAULT 'Original Payment Method',
       notification_emails TEXT DEFAULT '',
       auto_approve_enabled BOOLEAN DEFAULT false,
       auto_approve_amount NUMERIC(10,2) DEFAULT 0,
@@ -876,33 +899,74 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Shopify Refund (uses Shopify's built-in refund)
-app.post('/api/shopify/refund', async (req, res) => {
-  const { shop, order_id, amount, note } = req.body;
-  if (!shop || !order_id) return res.status(400).json({ error: 'shop and order_id required' });
+// Process a real Shopify refund for a return (Shopify App Store rule 1.1.15: refunds must go through
+// the original payment processor via Shopify's refund APIs — never a manual/bank/UPI/store-credit ledger).
+async function processShopifyRefund(shop, ret) {
   const sr = await getStoreToken(shop);
-  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
+  if (!sr.rows.length) throw new Error('Store not connected');
+  const access_token = sr.rows[0].access_token;
+
+  let lineItems = [];
+  try { lineItems = JSON.parse(ret.line_items || '[]'); } catch(e) {}
+  if (!lineItems.length) throw new Error('No order line items linked to this return — cannot process a Shopify refund automatically.');
+
+  const refund_line_items = lineItems.map(li => ({ line_item_id: li.id, quantity: li.quantity || 1, restock_type: 'no_restock' }));
+
+  const calcResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}/refunds/calculate.json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
+    body: JSON.stringify({ refund: { currency: 'INR', refund_line_items, shipping: { full_refund: false } } })
+  });
+  const calcData = await calcResp.json();
+  if (!calcData.refund) throw new Error(calcData.errors ? JSON.stringify(calcData.errors) : 'Shopify could not calculate this refund');
+
+  const refundResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}/refunds.json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
+    body: JSON.stringify({
+      refund: {
+        note: `Refund via GoReturn — Return #${ret.id}`,
+        notify: true,
+        refund_line_items,
+        transactions: calcData.refund.transactions || [],
+        shipping: calcData.refund.shipping || { full_refund: false }
+      }
+    })
+  });
+  const refundData = await refundResp.json();
+  if (!refundData.refund) throw new Error(refundData.errors ? JSON.stringify(refundData.errors) : 'Shopify refund creation failed');
+  return refundData.refund;
+}
+
+// Trigger the actual Shopify refund for a return — only marks it 'refunded' once Shopify confirms it
+app.post('/api/returns/:id/refund', async (req, res) => {
   try {
-    const calcResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}/refunds/calculate.json`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
-      body: JSON.stringify({ refund: { currency: 'INR', shipping: { full_refund: false } } })
-    });
-    const calcData = await calcResp.json();
-    const refundResp = await fetch(`https://${shop}/admin/api/2025-04/orders/${order_id}/refunds.json`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
-      body: JSON.stringify({
-        refund: {
-          note: note || 'Refund via GoReturn',
-          transactions: calcData.refund?.transactions || [],
-          shipping: { full_refund: false }
-        }
-      })
-    });
-    const refundData = await refundResp.json();
-    res.json(refundData);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const r = await pool.query('SELECT * FROM returns WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
+    const ret = r.rows[0];
+    if (!ret.shop_domain) return res.status(400).json({ error: 'No store linked to this return' });
+
+    const refund = await processShopifyRefund(ret.shop_domain, ret);
+
+    const upd = await pool.query(
+      `UPDATE returns SET status='refunded', refunded_at=NOW(), updated_at=NOW(), refund_status='completed', shopify_refund_id=$1 WHERE id=$2 RETURNING *`,
+      [String(refund.id), ret.id]
+    );
+    const updated = upd.rows[0];
+    if (updated.customer_email) {
+      const tpl = await getEmailTemplates(updated.shop_domain);
+      const t = tpl.refunded;
+      const ph = { order: updated.order_number||updated.order_id, name: updated.customer_name, amount: updated.amount, product: updated.product_name };
+      const subj = t ? fillPlaceholders(t.subject, ph) : `Refund Processed - #${updated.order_number||updated.order_id}`;
+      const msg = t ? fillPlaceholders(t.message, ph) : null;
+      sendEmail(updated.customer_email, subj, returnStatusEmail(updated.customer_name||'Customer', updated.order_number||updated.order_id, 'refunded', updated.amount, { product: updated.product_name, reason: updated.reason, returnId: updated.id, customMsg: msg }));
+    }
+    logActivity(req, 'Return Refunded', `#${ret.id} via Shopify (refund id ${refund.id})`);
+    res.json({ ok: true, return: updated, shopify_refund: refund });
+  } catch(e) {
+    await pool.query('UPDATE returns SET refund_status=$1 WHERE id=$2', ['failed', req.params.id]).catch(()=>{});
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // Returns CRUD with date filters
@@ -1117,7 +1181,7 @@ app.get('/api/portal-settings', async (req, res) => {
       return_reasons: (ss.return_reasons && ss.return_reasons.includes(',')) ? ss.return_reasons : 'Damaged Product,Wrong Item Received,Size/Fit Issue,Quality Not As Expected,Not As Described,Changed My Mind',
       exchange_reasons: (ss.exchange_reasons && ss.exchange_reasons.includes(',')) ? ss.exchange_reasons : 'Wrong Size,Wrong Color,Want Different Product',
       exchange_enabled: ss.exchange_enabled !== false,
-      refund_methods: (ss.refund_methods && ss.refund_methods.includes(',')) ? ss.refund_methods : 'Original Payment Method,Bank Transfer,Store Credit,UPI'
+      refund_methods: 'Original Payment Method'
     });
   } catch(e) { res.json({}); }
 });
@@ -1204,11 +1268,11 @@ app.post('/api/email-templates', async (req, res) => {
 
 // Create return/exchange
 app.post('/api/returns', async (req, res) => {
-  const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant, images } = req.body;
+  const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant, images, line_items } = req.body;
   const r = await pool.query(
-    `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
-    [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'']
+    `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+    [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'',line_items||'']
   );
   if (customer_email) {
     const tpl = await getEmailTemplates(shop_domain);
@@ -1222,13 +1286,14 @@ app.post('/api/returns', async (req, res) => {
 
 app.patch('/api/returns/:id', async (req, res) => {
   const { status, merchant_notes, tracking_number, pickup_status, archived, risk_level } = req.body;
+  // Refunds must go through Shopify's refund API (POST /api/returns/:id/refund), never a bare status flip
+  if (status === 'refunded') return res.status(400).json({ error: 'Use POST /api/returns/:id/refund to process refunds through Shopify' });
   const fields = [];
   const values = [];
   let idx = 1;
   if (status) {
     fields.push(`status=$${idx++}`); values.push(status);
     if (status === 'inspected') fields.push('inspected_at=NOW()');
-    if (status === 'refunded') fields.push('refunded_at=NOW()');
   }
   if (merchant_notes !== undefined) { fields.push(`merchant_notes=$${idx++}`); values.push(merchant_notes); }
   if (tracking_number !== undefined) { fields.push(`tracking_number=$${idx++}`); values.push(tracking_number); }
@@ -1423,6 +1488,165 @@ app.get('/api/shiprocket/track/:shipment_id', async (req, res) => {
     const data = shop ? await sellerShiprocketAPI(shop, `/courier/track/shipment/${req.params.shipment_id}`, 'GET') : await shiprocketAPI(`/courier/track/shipment/${req.params.shipment_id}`, 'GET');
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ========== MULTI-LOGISTICS ENDPOINTS ==========
+const LogisticsProviders = require('./logistics-providers.js');
+
+// Get all connected logistics providers for a store
+app.get('/api/logistics/status', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  try {
+    const r = await pool.query(
+      `SELECT
+        shiprocket_connected, clickpost_connected, shadowfax_connected,
+        delhivery_connected, xpressbees_connected, wareiq_connected,
+        default_logistics, logistics_auto_pickup
+      FROM shopify_stores WHERE shop_domain=$1`,
+      [shop]
+    );
+    const store = r.rows[0] || {};
+    res.json({
+      providers: {
+        shiprocket: store.shiprocket_connected || false,
+        clickpost: store.clickpost_connected || false,
+        shadowfax: store.shadowfax_connected || false,
+        delhivery: store.delhivery_connected || false,
+        xpressbees: store.xpressbees_connected || false,
+        wareiq: store.wareiq_connected || false
+      },
+      default: store.default_logistics || 'shiprocket',
+      auto_pickup: store.logistics_auto_pickup || false
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- ClickPost ----
+app.post('/api/logistics/clickpost/connect', async (req, res) => {
+  const { shop, api_key } = req.body;
+  if (!shop || !api_key) return res.status(400).json({ error: 'shop and api_key required' });
+  try {
+    const cp = new LogisticsProviders.ClickPost(api_key);
+    await pool.query(
+      'UPDATE shopify_stores SET clickpost_api_key=$1, clickpost_connected=true WHERE shop_domain=$2',
+      [api_key, shop]
+    );
+    logActivity(req, 'ClickPost Connected', shop);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/logistics/clickpost/disconnect', async (req, res) => {
+  const { shop } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET clickpost_api_key=\'\', clickpost_connected=false WHERE shop_domain=$1', [shop]);
+  logActivity(req, 'ClickPost Disconnected', shop);
+  res.json({ ok: true });
+});
+
+// ---- Shadowfax ----
+app.post('/api/logistics/shadowfax/connect', async (req, res) => {
+  const { shop, client_id, client_secret } = req.body;
+  if (!shop || !client_id || !client_secret) return res.status(400).json({ error: 'shop, client_id, client_secret required' });
+  try {
+    const sf = new LogisticsProviders.Shadowfax(client_id, client_secret);
+    await sf.getToken();
+    await pool.query(
+      'UPDATE shopify_stores SET shadowfax_client_id=$1, shadowfax_client_secret=$2, shadowfax_connected=true WHERE shop_domain=$3',
+      [client_id, client_secret, shop]
+    );
+    logActivity(req, 'Shadowfax Connected', shop);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/logistics/shadowfax/disconnect', async (req, res) => {
+  const { shop } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET shadowfax_client_id=\'\', shadowfax_client_secret=\'\', shadowfax_connected=false WHERE shop_domain=$1', [shop]);
+  logActivity(req, 'Shadowfax Disconnected', shop);
+  res.json({ ok: true });
+});
+
+// ---- Delhivery ----
+app.post('/api/logistics/delhivery/connect', async (req, res) => {
+  const { shop, api_key } = req.body;
+  if (!shop || !api_key) return res.status(400).json({ error: 'shop and api_key required' });
+  try {
+    await pool.query(
+      'UPDATE shopify_stores SET delhivery_api_key=$1, delhivery_connected=true WHERE shop_domain=$2',
+      [api_key, shop]
+    );
+    logActivity(req, 'Delhivery Connected', shop);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/logistics/delhivery/disconnect', async (req, res) => {
+  const { shop } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET delhivery_api_key=\'\', delhivery_connected=false WHERE shop_domain=$1', [shop]);
+  logActivity(req, 'Delhivery Disconnected', shop);
+  res.json({ ok: true });
+});
+
+// ---- XpressBees ----
+app.post('/api/logistics/xpressbees/connect', async (req, res) => {
+  const { shop, api_token } = req.body;
+  if (!shop || !api_token) return res.status(400).json({ error: 'shop and api_token required' });
+  try {
+    await pool.query(
+      'UPDATE shopify_stores SET xpressbees_api_token=$1, xpressbees_connected=true WHERE shop_domain=$2',
+      [api_token, shop]
+    );
+    logActivity(req, 'XpressBees Connected', shop);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/logistics/xpressbees/disconnect', async (req, res) => {
+  const { shop } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET xpressbees_api_token=\'\', xpressbees_connected=false WHERE shop_domain=$1', [shop]);
+  logActivity(req, 'XpressBees Disconnected', shop);
+  res.json({ ok: true });
+});
+
+// ---- WareIQ ----
+app.post('/api/logistics/wareiq/connect', async (req, res) => {
+  const { shop, client_id, client_secret } = req.body;
+  if (!shop || !client_id || !client_secret) return res.status(400).json({ error: 'shop, client_id, client_secret required' });
+  try {
+    const wq = new LogisticsProviders.WareIQ(client_id, client_secret);
+    await wq.getToken();
+    await pool.query(
+      'UPDATE shopify_stores SET wareiq_client_id=$1, wareiq_client_secret=$2, wareiq_connected=true WHERE shop_domain=$3',
+      [client_id, client_secret, shop]
+    );
+    logActivity(req, 'WareIQ Connected', shop);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/logistics/wareiq/disconnect', async (req, res) => {
+  const { shop } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query('UPDATE shopify_stores SET wareiq_client_id=\'\', wareiq_client_secret=\'\', wareiq_connected=false WHERE shop_domain=$1', [shop]);
+  logActivity(req, 'WareIQ Disconnected', shop);
+  res.json({ ok: true });
+});
+
+// Set default logistics provider & auto-pickup preference
+app.post('/api/logistics/settings', async (req, res) => {
+  const { shop, default_provider, auto_pickup } = req.body;
+  if (!shop) return res.status(400).json({ error: 'shop required' });
+  await pool.query(
+    'UPDATE shopify_stores SET default_logistics=$1, logistics_auto_pickup=$2 WHERE shop_domain=$3',
+    [default_provider || 'shiprocket', auto_pickup || false, shop]
+  );
+  logActivity(req, 'Logistics Settings Updated', `Provider: ${default_provider}, Auto-pickup: ${auto_pickup}`);
+  res.json({ ok: true });
 });
 
 // Admin APIs

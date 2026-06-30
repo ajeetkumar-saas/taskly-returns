@@ -194,10 +194,7 @@ Size/Fit Issue
 Quality Not As Expected
 Not As Described
 Changed My Mind</textarea></div>
-            <div class="fg"><label>Refund Methods (one per line)</label><textarea id="obRefunds" rows="3">Original Payment Method
-Bank Transfer
-Store Credit
-UPI</textarea></div>
+            <div class="fg"><label>Refund Method</label><textarea id="obRefunds" rows="1" disabled>Original Payment Method (via Shopify, required by App Store policy)</textarea></div>
           </div>
 
           <div id="obContent3" style="display:none">
@@ -405,58 +402,90 @@ Changed My Mind</textarea></div>
         <div class="fg"><label>Exchange Reasons (one per line)</label><textarea id="setExchangeReasons" rows="4">Wrong Size
 Wrong Color
 Want Different Product</textarea></div>
-        <div class="fg"><label>Refund Methods (one per line)</label><textarea id="setRefundMethods" rows="4">Original Payment Method
-Bank Transfer
-Store Credit
-UPI</textarea></div>
+        <div class="fg"><label>Refund Method</label><textarea id="setRefundMethods" rows="1" disabled>Original Payment Method (via Shopify, required by App Store policy)</textarea></div>
         <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save Reasons</button>
       </div></div>
     </div>
 
-    <!-- Logistics Page -->
+    <!-- Logistics Page - Multi-Provider -->
     <div class="page" id="page-logistics">
-      <div class="card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:var(--primary);margin-right:6px"></i>Shiprocket Integration</h3><span class="badge" id="shipBadge" style="display:none">Connected</span></div><div class="card-body">
-        <div id="shipNotConn">
-          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Connect Shiprocket to automate return pickups — schedule pickups, generate shipping labels (AWB), and track returns automatically.</p>
-          <div style="background:var(--primary-light);border-radius:10px;padding:16px;margin-bottom:16px">
-            <div style="font-weight:600;font-size:13px;color:var(--primary);margin-bottom:10px"><i class="fas fa-list-ol" style="margin-right:6px"></i>How to get your API credentials (3 minutes)</div>
-            <ol style="margin:0;padding-left:20px;font-size:12px;color:var(--gray-600);line-height:1.9">
-              <li>Login to <a href="https://app.shiprocket.in" target="_blank" style="color:var(--primary);font-weight:600">app.shiprocket.in</a> (or <a href="https://app.shiprocket.in/register" target="_blank" style="color:var(--primary);font-weight:600">create free account</a>)</li>
-              <li>Go to <strong>Settings → Additional Settings → API Users</strong></li>
-              <li>Click <strong>+ Add New API User</strong> button</li>
-              <li>Enter API user email (any email, doesn't need to exist)</li>
-              <li><strong>Select API Modules:</strong> Check <strong>Orders</strong>, <strong>Shipments</strong>, and <strong>Settings</strong> (these enable return pickups)</li>
-              <li>Click <strong>Apply</strong> → system generates password automatically</li>
-              <li>Copy email &amp; password and paste below</li>
-            </ol>
-          </div>
-          <div class="fr"><div class="fg"><label>API User Email</label><input type="email" id="shipEmail" placeholder="api-user@yourstore.com"></div><div class="fg"><label>API User Password</label><input type="password" id="shipPass" placeholder="••••••••"></div></div>
-          <button class="btn btn-primary" onclick="connectShiprocket()"><i class="fas fa-plug"></i> Connect &amp; Verify</button>
-          <span id="shipConnMsg" style="margin-left:12px;font-size:12px"></span>
+      <div style="margin-bottom:20px;padding:16px;background:#EEF2FF;border-radius:10px;border-left:4px solid var(--primary)">
+        <div style="font-weight:600;font-size:13px;color:var(--primary);margin-bottom:4px"><i class="fas fa-info-circle" style="margin-right:6px"></i>Connected Providers</div>
+        <div style="font-size:12px;color:var(--gray-600)">Set up multiple logistics partners for redundancy. Manage returns via your default provider or manually select per return.</div>
+        <div id="connectedBadges" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+
+      <!-- Shiprocket -->
+      <div class="card" id="ship-card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:#FF6B3B;margin-right:6px"></i>Shiprocket <span class="badge" id="ship-status" style="display:none;background:#FF6B3B;color:white">Connected</span></h3></div><div class="card-body">
+        <div id="ship-form">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Multi-carrier aggregator. Route returns via Delhivery, Ecom Express, BlueDart, and more.</p>
+          <div style="background:#FFF3EB;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--gray-600)"><strong>Setup:</strong> Login to Shiprocket → Settings → API Users → Add User → Select Orders, Shipments, Settings → Copy credentials</div>
+          <div class="fr"><div class="fg"><label>API Email</label><input type="email" id="ship-email" placeholder="api@yourstore.com"></div><div class="fg"><label>API Password</label><input type="password" id="ship-pass"></div></div>
+          <button class="btn btn-primary" onclick="connectProvider('shiprocket')"><i class="fas fa-plug"></i> Connect</button><span id="ship-msg" style="margin-left:10px;font-size:12px"></span>
         </div>
-        <div id="shipConn" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;background:var(--success-light);border-radius:10px;padding:14px 16px;margin-bottom:16px">
-            <div style="display:flex;align-items:center;gap:12px"><div style="width:40px;height:40px;border-radius:var(--radius);background:var(--success);color:white;display:flex;align-items:center;justify-content:center;font-size:18px"><i class="fas fa-check-circle"></i></div><div><div style="font-weight:600;font-size:13px;color:var(--success)">Shiprocket Connected</div><div style="font-size:11px;color:var(--gray-500)" id="shipConnEmail"></div></div></div>
-            <button class="btn btn-secondary" style="font-size:12px" onclick="disconnectShiprocket()"><i class="fas fa-unlink"></i> Disconnect</button>
-          </div>
-          <div style="border:1px solid var(--gray-200);border-radius:10px;padding:16px;margin-bottom:14px">
-            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Automatic return pickups</div>
-            <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px">When a return is approved, automatically create a Shiprocket pickup and generate the shipping label (AWB).</div>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="shipAutoPickup" onchange="saveShipSettings()" style="width:auto"> Enable auto-pickup on approval</label>
-          </div>
-          <div style="border:1px solid var(--gray-200);border-radius:10px;padding:16px">
-            <div style="font-weight:600;font-size:13px;margin-bottom:8px"><i class="fas fa-warehouse" style="margin-right:6px;color:var(--primary)"></i>Return destination (pickup location)</div>
-            <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px">Returns are shipped back to this Shiprocket pickup location.</div>
-            <select id="shipPickupLocation" onchange="saveShipSettings()" style="width:100%;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px"><option value="">Loading locations...</option></select>
-          </div>
-        </div>
+        <div id="ship-connected" style="display:none"><div style="background:var(--success-light);padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><div><strong style="color:var(--success)">✓ Connected</strong><div style="font-size:11px;color:var(--gray-600)">Auto-pickup enabled</div></div><button class="btn btn-sm btn-secondary" onclick="disconnectProvider('shiprocket')">Disconnect</button></div></div>
       </div></div>
-      <div class="card"><div class="card-hdr"><h3>Available Partners</h3></div><div class="card-body" style="padding:0"><table><thead><tr><th>Partner</th><th>Region</th><th>Status</th></tr></thead><tbody>
-        <tr><td><strong>Shiprocket</strong></td><td>India</td><td><span class="badge badge-approved" id="shipStatusBadge">Connect above</span></td></tr>
-        <tr><td><strong>Delhivery</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
-        <tr><td><strong>BlueDart</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
-        <tr><td><strong>Ecom Express</strong></td><td>India</td><td><span class="badge badge-archived">Coming Soon</span></td></tr>
-      </tbody></table></div></div>
+
+      <!-- ClickPost -->
+      <div class="card" id="clickpost-card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:#4F46E5;margin-right:6px"></i>ClickPost <span class="badge" id="clickpost-status" style="display:none;background:#4F46E5;color:white">Connected</span></h3></div><div class="card-body">
+        <div id="clickpost-form">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Dedicated returns management platform. Recommended for most sellers.</p>
+          <div style="background:#EEF2FF;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--gray-600)"><strong>Setup:</strong> Signup free → Settings → API Keys → Generate Token → Paste below</div>
+          <div class="fg"><label>API Key/Token</label><input type="text" id="clickpost-key" placeholder="ck_live_xxxxxxxxxxxx"></div>
+          <button class="btn btn-primary" onclick="connectProvider('clickpost')"><i class="fas fa-plug"></i> Connect</button><span id="clickpost-msg" style="margin-left:10px;font-size:12px"></span>
+        </div>
+        <div id="clickpost-connected" style="display:none"><div style="background:var(--success-light);padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><div><strong style="color:var(--success)">✓ Connected</strong><div style="font-size:11px;color:var(--gray-600)">Ready to use</div></div><button class="btn btn-sm btn-secondary" onclick="disconnectProvider('clickpost')">Disconnect</button></div></div>
+      </div></div>
+
+      <!-- Shadowfax -->
+      <div class="card" id="shadowfax-card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:#F59E0B;margin-right:6px"></i>Shadowfax <span class="badge" id="shadowfax-status" style="display:none;background:#F59E0B;color:white">Connected</span></h3></div><div class="card-body">
+        <div id="shadowfax-form">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Same-day pickup in metros. Fastest reverse logistics.</p>
+          <div style="background:#FFFBEB;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--gray-600)"><strong>Setup:</strong> Signup & KYC → Settings → API Credentials → Copy Client ID & Secret</div>
+          <div class="fr"><div class="fg"><label>Client ID</label><input type="text" id="shadowfax-id" placeholder="client_id_xxxx"></div><div class="fg"><label>Client Secret</label><input type="password" id="shadowfax-secret"></div></div>
+          <button class="btn btn-primary" onclick="connectProvider('shadowfax')"><i class="fas fa-plug"></i> Connect</button><span id="shadowfax-msg" style="margin-left:10px;font-size:12px"></span>
+        </div>
+        <div id="shadowfax-connected" style="display:none"><div style="background:var(--success-light);padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><div><strong style="color:var(--success)">✓ Connected</strong><div style="font-size:11px;color:var(--gray-600)">Ready to use</div></div><button class="btn btn-sm btn-secondary" onclick="disconnectProvider('shadowfax')">Disconnect</button></div></div>
+      </div></div>
+
+      <!-- Delhivery -->
+      <div class="card" id="delhivery-card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:#10B981;margin-right:6px"></i>Delhivery <span class="badge" id="delhivery-status" style="display:none;background:#10B981;color:white">Connected</span></h3></div><div class="card-body">
+        <div id="delhivery-form">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Largest network in India (20K+ pincodes). Best coverage.</p>
+          <div style="background:#ECFDF5;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--gray-600)"><strong>Setup:</strong> Signup → Settings → API Access → Request key (takes 24-48 hrs) → Paste below</div>
+          <div class="fg"><label>API Key</label><input type="text" id="delhivery-key" placeholder="api_key_xxxxxxxxxxxx"></div>
+          <button class="btn btn-primary" onclick="connectProvider('delhivery')"><i class="fas fa-plug"></i> Connect</button><span id="delhivery-msg" style="margin-left:10px;font-size:12px"></span>
+        </div>
+        <div id="delhivery-connected" style="display:none"><div style="background:var(--success-light);padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><div><strong style="color:var(--success)">✓ Connected</strong><div style="font-size:11px;color:var(--gray-600)">Ready to use</div></div><button class="btn btn-sm btn-secondary" onclick="disconnectProvider('delhivery')">Disconnect</button></div></div>
+      </div></div>
+
+      <!-- XpressBees -->
+      <div class="card" id="xpressbees-card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:#8B5CF6;margin-right:6px"></i>XpressBees <span class="badge" id="xpressbees-status" style="display:none;background:#8B5CF6;color:white">Connected</span></h3></div><div class="card-body">
+        <div id="xpressbees-form">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">High-volume logistics. Handles 3M+ shipments/day.</p>
+          <div style="background:#F3E8FF;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--gray-600)"><strong>Setup:</strong> Signup & KYC → Settings → Integrations → API → Generate Token → Paste below</div>
+          <div class="fg"><label>API Token</label><input type="text" id="xpressbees-token" placeholder="token_xxxxxxxxxxxx"></div>
+          <button class="btn btn-primary" onclick="connectProvider('xpressbees')"><i class="fas fa-plug"></i> Connect</button><span id="xpressbees-msg" style="margin-left:10px;font-size:12px"></span>
+        </div>
+        <div id="xpressbees-connected" style="display:none"><div style="background:var(--success-light);padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><div><strong style="color:var(--success)">✓ Connected</strong><div style="font-size:11px;color:var(--gray-600)">Ready to use</div></div><button class="btn btn-sm btn-secondary" onclick="disconnectProvider('xpressbees')">Disconnect</button></div></div>
+      </div></div>
+
+      <!-- WareIQ -->
+      <div class="card" id="wareiq-card"><div class="card-hdr"><h3><i class="fas fa-truck" style="color:#EF4444;margin-right:6px"></i>WareIQ <span class="badge" id="wareiq-status" style="display:none;background:#EF4444;color:white">Connected</span></h3></div><div class="card-body">
+        <div id="wareiq-form">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">WMS + Returns combined. For advanced warehouse management.</p>
+          <div style="background:#FEE2E2;border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--gray-600)"><strong>Setup:</strong> Signup → Settings → API Management → New Credentials → Copy Client ID & Secret</div>
+          <div class="fr"><div class="fg"><label>Client ID</label><input type="text" id="wareiq-id" placeholder="client_id_xxxx"></div><div class="fg"><label>Client Secret</label><input type="password" id="wareiq-secret"></div></div>
+          <button class="btn btn-primary" onclick="connectProvider('wareiq')"><i class="fas fa-plug"></i> Connect</button><span id="wareiq-msg" style="margin-left:10px;font-size:12px"></span>
+        </div>
+        <div id="wareiq-connected" style="display:none"><div style="background:var(--success-light);padding:12px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><div><strong style="color:var(--success)">✓ Connected</strong><div style="font-size:11px;color:var(--gray-600)">Ready to use</div></div><button class="btn btn-sm btn-secondary" onclick="disconnectProvider('wareiq')">Disconnect</button></div></div>
+      </div></div>
+
+      <div class="card"><div class="card-hdr"><h3>Default Provider & Settings</h3></div><div class="card-body">
+        <div class="fg"><label>Default Provider (for auto-pickups)</label><select id="defaultProvider" style="width:100%"><option value="shiprocket">Shiprocket (Multi-carrier)</option><option value="clickpost">ClickPost (Dedicated)</option><option value="shadowfax">Shadowfax (Fast)</option><option value="delhivery">Delhivery (Coverage)</option><option value="xpressbees">XpressBees (Volume)</option><option value="wareiq">WareIQ (WMS)</option></select></div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:12px"><input type="checkbox" id="autoPickup"> Enable auto-pickup when return is approved</label>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="saveLogisticsSettings()"><i class="fas fa-save"></i> Save</button>
+      </div></div>
     </div>
 
     <!-- Notifications Page -->
@@ -530,10 +559,7 @@ Size/Fit Issue
 Quality Not As Expected
 Not As Described
 Changed My Mind</textarea></div>
-            <div class="fg"><label>Refund Methods</label><textarea id="setRefundMethods" rows="4">Original Payment Method
-Bank Transfer
-Store Credit
-UPI</textarea></div>
+            <div class="fg"><label>Refund Method</label><textarea id="setRefundMethods" rows="1" disabled>Original Payment Method (via Shopify, required by App Store policy)</textarea></div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
           </div></div>
         </div>
@@ -736,7 +762,7 @@ UPI</textarea></div>
   <div class="fr"><div class="fg"><label>Phone</label><input type="text" id="fPhone" placeholder="+91"></div><div class="fg"><label>Amount (INR)</label><input type="number" id="fAmt" placeholder="0"></div></div>
   <div class="fr"><div class="fg"><label>Product</label><input type="text" id="fProd" placeholder="Product name"></div><div class="fg"><label>SKU</label><input type="text" id="fSku" placeholder="SKU"></div></div>
   <div id="exchangeFields" style="display:none"><div class="fr"><div class="fg"><label>Exchange For (Product)</label><input type="text" id="fExProd" placeholder="New product"></div><div class="fg"><label>Variant (Size/Color)</label><input type="text" id="fExVar" placeholder="L / Red"></div></div></div>
-  <div class="fr"><div class="fg"><label>Reason</label><select id="fReason"><option value="">Select</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong Item</option><option value="size_issue">Size Issue</option><option value="quality_issue">Quality Issue</option><option value="not_as_described">Not As Described</option><option value="changed_mind">Changed Mind</option></select></div><div class="fg"><label>Refund Method</label><select id="fRefund"><option value="original">Original Method</option><option value="bank_transfer">Bank Transfer</option><option value="store_credit">Store Credit</option><option value="upi">UPI</option></select></div></div>
+  <div class="fr"><div class="fg"><label>Reason</label><select id="fReason"><option value="">Select</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong Item</option><option value="size_issue">Size Issue</option><option value="quality_issue">Quality Issue</option><option value="not_as_described">Not As Described</option><option value="changed_mind">Changed Mind</option></select></div><div class="fg"><label>Refund Method</label><select id="fRefund" disabled><option value="original">Original Method</option></select></div></div>
   <div class="fg"><label>Details</label><textarea id="fDetails" rows="2" placeholder="Additional info..."></textarea></div>
 </div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createReturn()"><i class="fas fa-check"></i> Submit</button></div></div></div>
 
@@ -767,7 +793,7 @@ let allReturns=[],currentShop='',curFilter='all',curDate='all',modalType='return
 let trendChartObj,reasonChartObj,analyticsChartObj,reasonPieObj,statusPieObj;
 let analyticsData=null,curATab='requests';
 
-function showPage(p){if(p!=='admin'&&!roleCanAccess(p)){showAlert('You don\'t have permission to access this page','error');return;}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin',team:'Team Members'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='fraud')loadFraud();if(p==='pincode-risk')loadPincodeRisk();if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='team')loadTeam();if(p==='logistics')checkShiprocket();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
+function showPage(p){if(p!=='admin'&&!roleCanAccess(p)){showAlert('You don\'t have permission to access this page','error');return;}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(event?.currentTarget)event.currentTarget.classList.add('active');document.getElementById('pageTitle').textContent={dashboard:'Dashboard',returns:'Returns',exchanges:'Exchanges',orders:'Orders',analytics:'Analytics',export:'Export Data',stores:'Stores',policies:'Policies',reasons:'Reasons',logistics:'Logistics',notifications:'Notifications',settings:'Settings',admin:'Admin',team:'Team Members'}[p]||p;if(p==='store-analytics'){if(!canAccess('analytics'))return showUpgrade('store-analytics');loadStoreAnalytics();}if(p==='fraud')loadFraud();if(p==='pincode-risk')loadPincodeRisk();if(p==='orders'&&currentShop)loadOrders();if(p==='analytics'){if(!canAccess('analytics'))return showUpgrade('analytics');loadAnalytics(30);}if(p==='admin'){loadAllStores();}if(p==='team')loadTeam();if(p==='logistics')loadLogisticsStatus();if(p==='automation'){if(!canAccess('automation'))return showUpgrade('automation');loadRules();}if(p==='promotions'){if(!canAccess('promotions'))return showUpgrade('promotions');loadPromos();}if(p==='webhooks'){if(!canAccess('webhooks'))return showUpgrade('webhooks');loadWebhooks();}if(p==='locations'){if(!canAccess('locations'))return showUpgrade('locations');loadLocations();}if(p==='exchanges'){if(!canAccess('exchanges'))return showUpgrade('exchanges');}if(p==='export'){if(!canAccess('export'))return showUpgrade('export');}}
 function showAlert(m,t){const e=document.getElementById('alertBox');e.innerHTML=`<div class="alert alert-${t}"><i class="fas fa-${t==='success'?'check-circle':'exclamation-circle'}"></i>${m}</div>`;setTimeout(()=>e.innerHTML='',4000);}
 
 let allStores=[];
@@ -843,7 +869,19 @@ function closeModal(){document.getElementById('modal').classList.remove('show');
 async function createReturn(){const data={order_id:document.getElementById('fOrdId').value,order_number:document.getElementById('fOrdNum').value,customer_name:document.getElementById('fName').value,customer_email:document.getElementById('fEmail').value,customer_phone:document.getElementById('fPhone').value,product_name:document.getElementById('fProd').value,product_sku:document.getElementById('fSku').value,amount:document.getElementById('fAmt').value,reason:document.getElementById('fReason').value,reason_detail:document.getElementById('fDetails').value,refund_method:document.getElementById('fRefund').value,shop_domain:currentShop,type:modalType,exchange_product:document.getElementById('fExProd')?.value||'',exchange_variant:document.getElementById('fExVar')?.value||''};
 if(!data.customer_name)return showAlert('Customer name required','error');const r=await fetch('/api/returns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(r.ok){showAlert((modalType==='exchange'?'Exchange':'Return')+' created!','success');closeModal();loadReturns();}else showAlert('Failed','error');}
 
-async function upd(id,status){await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});showAlert(`#${id} → ${status}`,'success');loadReturns();}
+async function upd(id,status){
+  if(status==='refunded'){
+    showAlert(`Processing refund for #${id} via Shopify...`,'success');
+    try{
+      const r=await fetch('/api/returns/'+id+'/refund',{method:'POST',headers:{'Content-Type':'application/json'}});
+      const d=await r.json();
+      if(!r.ok){showAlert(`Refund failed for #${id}: ${d.error||'Unknown error'}`,'error');return;}
+      showAlert(`#${id} refunded via Shopify`,'success');
+    }catch(e){showAlert(`Refund failed for #${id}`,'error');}
+    loadReturns();return;
+  }
+  await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});showAlert(`#${id} → ${status}`,'success');loadReturns();
+}
 async function archive(id){await fetch('/api/returns/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({archived:true})});showAlert(`#${id} archived`,'success');loadReturns();}
 
 function exportCSV(){window.open('/api/returns/export?shop='+currentShop,'_blank');}
@@ -860,11 +898,16 @@ function backToSettings(){document.getElementById('settingsGrid').style.display=
 
 async function savePortalSettings(){if(!currentShop)return showAlert('Connect store first','error');const data={shop:currentShop,heading:document.getElementById('setPortalHeading').value,subheading:document.getElementById('setPortalSubheading').value,logo_url:document.getElementById('setPortalLogo').value,exchange_enabled:document.getElementById('setExchangeEnabled').value==='true'};await fetch('/api/portal-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});await saveSettings();showAlert('Portal settings saved! Preview to see changes.','success');}
 
-async function checkShiprocket(){if(!currentShop)return;try{const r=await fetch('/api/shiprocket/status?shop='+currentShop);const d=await r.json();if(d.connected){document.getElementById('shipNotConn').style.display='none';document.getElementById('shipConn').style.display='block';document.getElementById('shipBadge').style.display='inline-flex';document.getElementById('shipBadge').className='badge badge-approved';document.getElementById('shipConnEmail').textContent=d.email;document.getElementById('shipStatusBadge').textContent='Connected';document.getElementById('shipStatusBadge').className='badge badge-approved';const ap=document.getElementById('shipAutoPickup');if(ap)ap.checked=!!d.auto_pickup;loadShipLocations(d.pickup_location);}else{document.getElementById('shipNotConn').style.display='block';document.getElementById('shipConn').style.display='none';document.getElementById('shipBadge').style.display='none';}}catch(e){}}
-async function loadShipLocations(selected){const sel=document.getElementById('shipPickupLocation');if(!sel)return;try{const r=await fetch('/api/shiprocket/pickup-locations?shop='+currentShop);const d=await r.json();if(!d.locations||!d.locations.length){sel.innerHTML='<option value="">No pickup locations found — add one in Shiprocket</option>';return;}sel.innerHTML=d.locations.map(l=>`<option value="${l.name}" ${l.name===selected?'selected':''}>${l.name} — ${l.city||''} ${l.pincode||''}</option>`).join('');}catch(e){sel.innerHTML='<option value="">Could not load locations</option>';}}
-async function saveShipSettings(){if(!currentShop)return;const auto_pickup=document.getElementById('shipAutoPickup').checked;const pickup_location=document.getElementById('shipPickupLocation').value;try{await fetch('/api/shiprocket/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,auto_pickup,pickup_location})});showAlert('Settings saved','success');}catch(e){}}
-async function connectShiprocket(){const e=document.getElementById('shipEmail').value.trim(),p=document.getElementById('shipPass').value;const msg=document.getElementById('shipConnMsg');if(!e||!p)return showAlert('Enter Shiprocket API credentials','error');if(!currentShop)return showAlert('Connect store first','error');if(msg){msg.textContent='Verifying...';msg.style.color='var(--gray-500)';}try{const r=await fetch('/api/shiprocket/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,email:e,password:p})});const d=await r.json();if(d.ok){showAlert('Shiprocket connected & verified!','success');checkShiprocket();}else{if(msg){msg.textContent='✗ '+(d.error||'Invalid credentials');msg.style.color='var(--danger)';}showAlert(d.error||'Failed','error');}}catch(e){if(msg){msg.textContent='✗ Connection error';msg.style.color='var(--danger)';}showAlert('Error','error');}}
-async function disconnectShiprocket(){await fetch('/api/shiprocket/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop})});showAlert('Disconnected','success');checkShiprocket();}
+// Multi-Logistics Provider Management
+async function loadLogisticsStatus(){if(!currentShop)return;try{const r=await fetch('/api/logistics/status?shop='+currentShop);const d=await r.json();const providers=['shiprocket','clickpost','shadowfax','delhivery','xpressbees','wareiq'];providers.forEach(p=>{const form=document.getElementById(`${p}-form`);const conn=document.getElementById(`${p}-connected`);const status=document.getElementById(`${p}-status`);if(d.providers[p]){if(form)form.style.display='none';if(conn)conn.style.display='block';if(status)status.style.display='inline-block';}else{if(form)form.style.display='block';if(conn)conn.style.display='none';if(status)status.style.display='none';}});updateConnectedBadges(d.providers);const defaultSel=document.getElementById('defaultProvider');if(defaultSel)defaultSel.value=d.default||'shiprocket';const autoPickup=document.getElementById('autoPickup');if(autoPickup)autoPickup.checked=d.auto_pickup||false;}catch(e){}}
+
+function updateConnectedBadges(providers){const badges=document.getElementById('connectedBadges');if(!badges)return;const connected=Object.entries(providers).filter(([k,v])=>v).map(([k])=>k);if(!connected.length){badges.innerHTML='<span style="color:var(--gray-500);font-size:12px">No providers connected yet</span>';return;}badges.innerHTML=connected.map(p=>`<span class="badge" style="background:var(--success);color:white;font-size:11px"><i class="fas fa-check"></i> ${p.charAt(0).toUpperCase()+p.slice(1)}</span>`).join('');}
+
+async function connectProvider(provider){if(!currentShop)return showAlert('Connect store first','error');const msg=document.getElementById(`${provider}-msg`);if(msg)msg.textContent='Verifying...';try{let payload={shop:currentShop};if(provider==='shiprocket'){payload.email=document.getElementById('ship-email').value.trim();payload.password=document.getElementById('ship-pass').value;}else if(provider==='clickpost'){payload.api_key=document.getElementById('clickpost-key').value.trim();}else if(provider==='shadowfax'){payload.client_id=document.getElementById('shadowfax-id').value.trim();payload.client_secret=document.getElementById('shadowfax-secret').value;}else if(provider==='delhivery'){payload.api_key=document.getElementById('delhivery-key').value.trim();}else if(provider==='xpressbees'){payload.api_token=document.getElementById('xpressbees-token').value.trim();}else if(provider==='wareiq'){payload.client_id=document.getElementById('wareiq-id').value.trim();payload.client_secret=document.getElementById('wareiq-secret').value;}const r=await fetch(`/api/logistics/${provider}/connect`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(d.ok){showAlert(`${provider} connected!`,'success');loadLogisticsStatus();}else{if(msg){msg.textContent='✗ '+( d.error||'Failed');msg.style.color='var(--danger)';}showAlert(d.error||'Failed','error');}}catch(e){if(msg){msg.textContent='✗ Error';msg.style.color='var(--danger)';}showAlert('Connection error','error');}}
+
+async function disconnectProvider(provider){if(!confirm(`Disconnect ${provider}?`))return;try{await fetch(`/api/logistics/${provider}/disconnect`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop})});showAlert('Disconnected','success');loadLogisticsStatus();}catch(e){showAlert('Error','error');}}
+
+async function saveLogisticsSettings(){if(!currentShop)return;const defaultProvider=document.getElementById('defaultProvider').value;const autoPickup=document.getElementById('autoPickup').checked;try{await fetch('/api/logistics/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({shop:currentShop,default_provider:defaultProvider,auto_pickup:autoPickup})});showAlert('Settings saved','success');}catch(e){showAlert('Error','error');}}
 
 // Admin
 const AK='goreturn2026admin';
@@ -1063,7 +1106,7 @@ async function loadPincodeRisk(){try{const r=await fetch('/api/analytics/pincode
 function viewImages(encoded){const imgs=decodeURIComponent(encoded).split('|||').filter(Boolean);if(!imgs.length)return showAlert('No images','error');const html=imgs.map(src=>src.startsWith('data:video')?'<video src="'+src+'" controls style="max-width:200px;max-height:200px;border-radius:8px"></video>':'<img src="'+src+'" style="max-width:200px;max-height:200px;border-radius:8px;object-fit:cover">').join('');const w=window.open('','_blank','width=600,height=400');w.document.write('<html><head><title>Return Images</title></head><body style="background:#111;display:flex;flex-wrap:wrap;gap:12px;padding:20px;align-items:center;justify-content:center">'+html+'</body></html>');}
 
 function fmtReason(r){return{damaged:'Damaged',wrong_item:'Wrong Item',size_issue:'Size Issue',quality_issue:'Quality Issue',not_as_described:'Not As Described',changed_mind:'Changed Mind'}[r]||r||'-';}
-function fmtRefund(r){return{original:'Original',bank_transfer:'Bank Transfer',store_credit:'Store Credit',upi:'UPI',cod:'COD'}[r]||r||'-';}
+function fmtRefund(r){return{original:'Original Payment Method'}[r]||r||'-';}
 function fmtDate(d){if(!d)return'-';return new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
 
 // Onboarding

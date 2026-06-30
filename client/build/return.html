@@ -162,12 +162,9 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
           <textarea id="returnDetails" rows="3" placeholder="Tell us more about the issue..."></textarea>
         </div>
         <div class="form-group">
-          <label>Preferred refund method</label>
-          <select id="returnRefund">
+          <label>Refund method</label>
+          <select id="returnRefund" disabled>
             <option value="original">Original payment method</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="upi">UPI</option>
-            <option value="store_credit">Store credit</option>
           </select>
         </div>
         <div class="btn-group">
@@ -240,10 +237,7 @@ async function loadPortalSettings() {
       sel.innerHTML = '<option value="">Select a reason</option>' + s.return_reasons.split(',').map(r => '<option value="' + r.trim().toLowerCase().replace(/\s+/g, '_') + '">' + r.trim() + '</option>').join('');
     }
     if (s.exchange_enabled === false) { document.getElementById('optExchange').style.display = 'none'; }
-    if (s.refund_methods) {
-      const sel = document.getElementById('returnRefund');
-      sel.innerHTML = s.refund_methods.split(',').map(m => '<option value="' + m.trim().toLowerCase().replace(/\s+/g, '_') + '">' + m.trim() + '</option>').join('');
-    }
+    // Refund method is locked to original payment method only (Shopify App Store requirement 1.1.15)
   } catch(e) {}
 }
 loadPortalSettings();
@@ -417,7 +411,8 @@ async function submitReturn() {
     shop_domain: shop,
     type: returnType,
     exchange_product: document.getElementById('exchangeFor')?.value || '',
-    images: imageUrls
+    images: imageUrls,
+    line_items: JSON.stringify(selectedProducts.map(p => ({ id: p.id, quantity: p.quantity })))
   };
 
   const btn = event.currentTarget;
