@@ -1229,7 +1229,7 @@ async function deleteTeamMember(id){
 const params=new URLSearchParams(location.search);
 if(params.get('connected'))showAlert('Store connected!','success');
 checkDashboardAuth();
-loadStores().then(()=>{checkShiprocket();checkOnboarding();return loadReturns();}).then(()=>renderDashCharts());
+loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Init error:',e));
 </script>
 </body>
 </html>
