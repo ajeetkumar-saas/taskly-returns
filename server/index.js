@@ -1142,7 +1142,7 @@ async function processShopifyRefund(shop, ret) {
         note: `Refund via GoReturn — Return #${ret.id}`,
         notify: true,
         refund_line_items,
-        transactions: calcData.refund.transactions || [],
+        transactions: (calcData.refund.transactions || []).map(t => ({ ...t, kind: 'refund' })),
         shipping: calcData.refund.shipping || { full_refund: false }
       }
     })
