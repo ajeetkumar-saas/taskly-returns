@@ -2472,4 +2472,21 @@ initDB().then(() => {
   // First backup 2 min after boot (lets DB settle), then every 24 hours
   setTimeout(() => runDataBackup(false), 2 * 60 * 1000);
   setInterval(() => runDataBackup(false), 24 * 60 * 60 * 1000);
+
+  // Register refunds/create webhook for all existing stores (idempotent)
+  setTimeout(async () => {
+    try {
+      const stores = await pool.query('SELECT shop_domain, access_token FROM stores WHERE access_token IS NOT NULL');
+      for (const row of stores.rows) {
+        try {
+          await fetch(`https://${row.shop_domain}/admin/api/2025-04/webhooks.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': row.access_token },
+            body: JSON.stringify({ webhook: { topic: 'refunds/create', address: `${APP_URL}/api/webhooks/shopify/refunds-create`, format: 'json' } })
+          });
+          console.log(`Webhook registered for ${row.shop_domain}`);
+        } catch(e) { console.log(`Webhook reg failed for ${row.shop_domain}: ${e.message}`); }
+      }
+    } catch(e) { console.log('Bulk webhook registration error:', e.message); }
+  }, 10 * 1000); // 10 seconds after boot
 });
