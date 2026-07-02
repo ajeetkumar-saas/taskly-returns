@@ -2464,7 +2464,7 @@ async function runDataBackup(triggeredManually) {
 // Force register refunds/create webhook for all stores (admin only)
 app.post('/api/admin/register-webhooks', requireOwner, async (req, res) => {
   try {
-    const stores = await pool.query('SELECT shop_domain, access_token FROM stores WHERE access_token IS NOT NULL');
+    const stores = await pool.query('SELECT shop_domain, access_token FROM shopify_stores WHERE access_token IS NOT NULL');
     const results = [];
     for (const row of stores.rows) {
       try {
@@ -2496,7 +2496,7 @@ initDB().then(() => {
   // Register refunds/create webhook for all existing stores (idempotent)
   setTimeout(async () => {
     try {
-      const stores = await pool.query('SELECT shop_domain, access_token FROM stores WHERE access_token IS NOT NULL');
+      const stores = await pool.query('SELECT shop_domain, access_token FROM shopify_stores WHERE access_token IS NOT NULL');
       for (const row of stores.rows) {
         try {
           await fetch(`https://${row.shop_domain}/admin/api/2025-04/webhooks.json`, {
