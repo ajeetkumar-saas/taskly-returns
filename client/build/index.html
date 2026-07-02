@@ -1142,7 +1142,8 @@ function getAuthHeaders(){const t=getAuthToken();return t?{'x-auth-token':t}:{};
 // pulled per call) and sends it for the backend to verify; otherwise falls back to the
 // standalone-dashboard login session.
 async function shopAuthHeaders(){
-  if(window.shopify){try{const t=await shopify.idToken();if(t)return{'Authorization':'Bearer '+t};}catch(e){}}
+  const isEmbedded=new URLSearchParams(location.search).get('shop');
+  if(isEmbedded&&window.shopify){try{const t=await Promise.race([shopify.idToken(),new Promise((_,r)=>setTimeout(()=>r(new Error('t')),3000))]);if(t)return{'Authorization':'Bearer '+t};}catch(e){}}
   return getAuthHeaders();
 }
 
