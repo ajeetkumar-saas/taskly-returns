@@ -2240,7 +2240,9 @@ function verifyShopifyHmac(req) {
 // GoReturn is a data processor here — the merchant (shop) is the data controller. So
 // Sync refunds processed directly in Shopify admin back to GoReturn dashboard
 app.post('/api/webhooks/shopify/refunds-create', async (req, res) => {
-  if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
+  const hmacValid = verifyShopifyHmac(req);
+  console.log(`refunds/create webhook received — shop: ${req.headers['x-shopify-shop-domain']}, hmac_valid: ${hmacValid}, secret_set: ${!!SHOPIFY_CLIENT_SECRET}`);
+  if (!hmacValid) { console.log('refunds/create HMAC failed — rejecting'); return res.status(401).send('Unauthorized'); }
   try {
     const shop = req.headers['x-shopify-shop-domain'];
     const refund = req.body;
