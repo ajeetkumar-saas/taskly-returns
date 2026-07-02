@@ -2461,6 +2461,26 @@ async function runDataBackup(triggeredManually) {
 }
 
 // Manual on-demand backup trigger (admin only)
+// Force register refunds/create webhook for all stores (admin only)
+app.post('/api/admin/register-webhooks', requireOwner, async (req, res) => {
+  try {
+    const stores = await pool.query('SELECT shop_domain, access_token FROM stores WHERE access_token IS NOT NULL');
+    const results = [];
+    for (const row of stores.rows) {
+      try {
+        const r = await fetch(`https://${row.shop_domain}/admin/api/2025-04/webhooks.json`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': row.access_token },
+          body: JSON.stringify({ webhook: { topic: 'refunds/create', address: `${APP_URL}/api/webhooks/shopify/refunds-create`, format: 'json' } })
+        });
+        const d = await r.json();
+        results.push({ shop: row.shop_domain, status: r.status, webhook_id: d.webhook?.id, errors: d.errors });
+      } catch(e) { results.push({ shop: row.shop_domain, error: e.message }); }
+    }
+    res.json({ ok: true, results });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/admin/backup-now', requireOwner, async (req, res) => {
   const result = await runDataBackup(true);
   res.json(result);
