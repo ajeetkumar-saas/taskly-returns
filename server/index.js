@@ -894,6 +894,24 @@ app.get('/api/auth/callback', async (req, res) => {
       await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [access_token, shop]).catch(()=>{});
     }
 
+    // Register Shopify webhooks needed for sync (idempotent — Shopify deduplicates by topic+address)
+    try {
+      const webhookTopics = [
+        'refunds/create',
+        'app/uninstalled'
+      ];
+      for (const topic of webhookTopics) {
+        const address = topic === 'app/uninstalled'
+          ? `${APP_URL}/api/webhooks/app/uninstalled`
+          : `${APP_URL}/api/webhooks/shopify/${topic.replace('/', '-')}`;
+        await fetch(`https://${shop}/admin/api/2025-04/webhooks.json`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
+          body: JSON.stringify({ webhook: { topic, address, format: 'json' } })
+        });
+      }
+    } catch(e) { console.log('Webhook registration warning:', e.message); }
+
     const plan = req.query.plan || 'starter';
     if (plan === 'free_trial' || plan === 'free') {
       res.redirect(`/?shop=${shop}`);
@@ -1093,11 +1111,21 @@ async function processShopifyRefund(shop, ret) {
 
   const refund_line_items = lineItems.map(li => ({ line_item_id: li.id, quantity: li.quantity || 1, restock_type: 'no_restock' }));
 
+  // Fetch order currency — do not hardcode INR, stores may use USD or other currencies
+  let orderCurrency = 'INR';
+  try {
+    const orderResp = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}.json?fields=currency`, {
+      headers: { 'X-Shopify-Access-Token': access_token }
+    });
+    const orderData = await orderResp.json();
+    if (orderData.order?.currency) orderCurrency = orderData.order.currency;
+  } catch(e) {}
+
   // Safe to retry — calculate is read-only and doesn't move money
   const calcResp = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders/${ret.order_id}/refunds/calculate.json`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
-    body: JSON.stringify({ refund: { currency: 'INR', refund_line_items, shipping: { full_refund: false } } })
+    body: JSON.stringify({ refund: { currency: orderCurrency, refund_line_items, shipping: { full_refund: false } } })
   });
   const calcData = await calcResp.json();
   if (!calcData.refund) throw new Error(calcData.errors ? JSON.stringify(calcData.errors) : 'Shopify could not calculate this refund');
@@ -2210,6 +2238,32 @@ function verifyShopifyHmac(req) {
 
 // Mandatory Shopify Compliance Webhooks
 // GoReturn is a data processor here — the merchant (shop) is the data controller. So
+// Sync refunds processed directly in Shopify admin back to GoReturn dashboard
+app.post('/api/webhooks/shopify/refunds-create', async (req, res) => {
+  if (!verifyShopifyHmac(req)) return res.status(401).send('Unauthorized');
+  try {
+    const shop = req.headers['x-shopify-shop-domain'];
+    const refund = req.body;
+    if (!shop || !refund?.order_id) return res.status(200).json({ ok: true });
+
+    // Find a return for this order that isn't already marked refunded
+    const existing = await pool.query(
+      `SELECT id FROM returns WHERE shop_domain=$1 AND order_id=$2 AND status != 'refunded' ORDER BY created_at DESC LIMIT 1`,
+      [shop, String(refund.order_id)]
+    );
+    if (existing.rows.length) {
+      const retId = existing.rows[0].id;
+      const refundId = String(refund.id || '');
+      await pool.query(
+        `UPDATE returns SET status='refunded', refunded_at=NOW(), updated_at=NOW(), refund_status='completed', shopify_refund_id=$1 WHERE id=$2`,
+        [refundId, retId]
+      );
+      console.log(`Shopify refund webhook: synced return #${retId} → refunded (Shopify refund ${refundId})`);
+    }
+  } catch(e) { console.log('orders/refunds/create webhook error:', e.message); }
+  res.status(200).json({ ok: true });
+});
+
 // data_request compiles the customer's records and emails them to the merchant to forward,
 // and redact requests actually scrub the data rather than just acknowledging the webhook.
 app.post('/api/webhooks/customers/data_request', async (req, res) => {
