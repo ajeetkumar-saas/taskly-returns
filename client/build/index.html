@@ -1286,12 +1286,14 @@ async function initEmbeddedApp() {
 
   // Hide admin-only features in embedded app
   if(window.shopify) {
-    const storeFilter=document.getElementById('storeOrderFilter');
-    if(storeFilter?.parentElement) storeFilter.parentElement.style.display='none';
-    const dateFilterDiv=document.querySelector('[class="filter-bar"]');
-    if(dateFilterDiv?.parentElement?.parentElement) dateFilterDiv.parentElement.parentElement.style.display='none';
-    const brandFilterDiv=document.getElementById('brandFilterDiv');
-    if(brandFilterDiv) brandFilterDiv.style.display='none';
+    try {
+      const storeFilter=document.getElementById('storeOrderFilter');
+      if(storeFilter?.parentElement) storeFilter.parentElement.style.display='none';
+      const dateFilterDiv=document.querySelector('.filter-bar');
+      if(dateFilterDiv?.parentElement?.parentElement) dateFilterDiv.parentElement.parentElement.style.display='none';
+      const brandFilterDiv=document.getElementById('brandFilterDiv');
+      if(brandFilterDiv) brandFilterDiv.style.display='none';
+    } catch(e) { console.log('Hide filters error:', e); }
   }
 
   checkDashboardAuth();
