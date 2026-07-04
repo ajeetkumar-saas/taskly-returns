@@ -434,8 +434,11 @@ async function checkSessionTimeout(req, res, next) {
 }
 
 // Shop access + plan requirement (for premium features)
-// planName: 'starter', 'growth', or 'pro'
-function requirePlan(planName) {
+// planName: 'starter', 'growth', or 'pro' — the minimum standard-plan tier required.
+// featureKey: the specific custom_features flag this endpoint maps to (e.g. 'automation',
+// 'promotions', 'fraud', 'pincode', 'webhooks'). Required so custom-plan sellers are gated
+// per-feature instead of all growth/pro-tier endpoints collapsing onto one shared flag.
+function requirePlan(planName, featureKey) {
   return async (req, res, next) => {
     await requireShopAccess(req, res, async () => {
       // After requireShopAccess validates shop, check plan
@@ -457,18 +460,15 @@ function requirePlan(planName) {
           if (!r.rows.length) return res.status(404).json({ error: 'Store not found' });
           const storePlan = r.rows[0].plan || 'free';
 
-          // Custom plan: check if feature is in custom_features
+          // Custom plan: check the specific feature flag for this endpoint
           if (storePlan === 'custom') {
             try {
               const features = JSON.parse(r.rows[0].custom_features || '{}');
-              // Map feature names to keys in custom_features
-              const featureMap = {
-                starter: 'analytics',
-                growth: 'fraud',
-                pro: 'webhooks'
-              };
-              const featureKey = featureMap[planName];
-              if (featureKey && features[featureKey] !== true) {
+              // Fallback covers any requirePlan() call site that hasn't been given an
+              // explicit featureKey yet — defaults to one representative flag per tier.
+              const defaultFeatureKey = { starter: 'analytics', growth: 'fraud', pro: 'webhooks' }[planName];
+              const key = featureKey || defaultFeatureKey;
+              if (key && features[key] !== true) {
                 return res.status(402).json({ error: `This feature requires a custom plan upgrade` });
               }
               return next();
@@ -1504,7 +1504,7 @@ app.get('/api/returns/stats', requireShopAccess, async (req, res) => {
 });
 
 // Analytics with date range
-app.get('/api/analytics', requirePlan('starter'), async (req, res) => {
+app.get('/api/analytics', requirePlan('starter','analytics'), async (req, res) => {
   const { shop, days } = req.query;
   const d = parseInt(days) || 30;
   const p = shop ? [shop] : [];
@@ -1522,7 +1522,7 @@ app.get('/api/analytics', requirePlan('starter'), async (req, res) => {
 });
 
 // Order Analytics — fetch all orders from Shopify and analyze
-app.get('/api/analytics/orders', requirePlan('starter'), async (req, res) => {
+app.get('/api/analytics/orders', requirePlan('starter','analytics'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1585,7 +1585,7 @@ app.get('/api/analytics/orders', requirePlan('starter'), async (req, res) => {
 });
 
 // Return Analytics by location and product
-app.get('/api/analytics/returns-deep', requirePlan('starter'), async (req, res) => {
+app.get('/api/analytics/returns-deep', requirePlan('starter','analytics'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -2367,7 +2367,7 @@ app.post('/api/offers/redeem', requireShopAccess, async (req, res) => {
 });
 
 // Customer fraud score
-app.get('/api/analytics/fraud', requirePlan('growth'), async (req, res) => {
+app.get('/api/analytics/fraud', requirePlan('growth','fraud'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -2384,7 +2384,7 @@ app.get('/api/analytics/fraud', requirePlan('growth'), async (req, res) => {
 });
 
 // Pincode risk score
-app.get('/api/analytics/pincode-risk', requirePlan('growth'), async (req, res) => {
+app.get('/api/analytics/pincode-risk', requirePlan('growth','pincode'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -2468,7 +2468,7 @@ app.post('/api/returns/:id/images', requireShopAccess, async (req, res) => {
 });
 
 // Automation Rules (Wonder Bot)
-app.get('/api/automation/rules', requirePlan('growth'), async (req, res) => {
+app.get('/api/automation/rules', requirePlan('growth','automation'), async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
@@ -2482,7 +2482,7 @@ app.get('/api/automation/rules', requirePlan('growth'), async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/automation/rules', requirePlan('growth'), async (req, res) => {
+app.post('/api/automation/rules', requirePlan('growth','automation'), async (req, res) => {
   const { shop, name, condition_field, condition_operator, condition_value, action_type, action_value } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
@@ -2497,13 +2497,13 @@ app.post('/api/automation/rules', requirePlan('growth'), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/automation/rules/:id', requirePlan('growth'), async (req, res) => {
+app.delete('/api/automation/rules/:id', requirePlan('growth','automation'), async (req, res) => {
   await pool.query('DELETE FROM automation_rules WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
 
 // Promotions (Wonder Promotions - incentivize exchange over refund)
-app.get('/api/promotions', requirePlan('growth'), async (req, res) => {
+app.get('/api/promotions', requirePlan('growth','promotions'), async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
@@ -2517,7 +2517,7 @@ app.get('/api/promotions', requirePlan('growth'), async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/promotions', requirePlan('growth'), async (req, res) => {
+app.post('/api/promotions', requirePlan('growth','promotions'), async (req, res) => {
   const { shop, name, type, bonus_percent, message } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
@@ -2531,14 +2531,14 @@ app.post('/api/promotions', requirePlan('growth'), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch('/api/promotions/:id', requirePlan('growth'), async (req, res) => {
+app.patch('/api/promotions/:id', requirePlan('growth','promotions'), async (req, res) => {
   const { active } = req.body;
   const r = await pool.query('UPDATE promotions SET active=$1 WHERE id=$2 RETURNING *', [active, req.params.id]);
   res.json(r.rows[0]);
 });
 
 // Webhooks
-app.get('/api/webhooks', requirePlan('pro'), async (req, res) => {
+app.get('/api/webhooks', requirePlan('pro','webhooks'), async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
@@ -2551,7 +2551,7 @@ app.get('/api/webhooks', requirePlan('pro'), async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/webhooks', requirePlan('pro'), async (req, res) => {
+app.post('/api/webhooks', requirePlan('pro','webhooks'), async (req, res) => {
   const { shop, url, events } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
@@ -2564,7 +2564,7 @@ app.post('/api/webhooks', requirePlan('pro'), async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/webhooks/:id', requirePlan('pro'), async (req, res) => {
+app.delete('/api/webhooks/:id', requirePlan('pro','webhooks'), async (req, res) => {
   await pool.query('DELETE FROM webhooks WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
