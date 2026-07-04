@@ -1160,7 +1160,37 @@ app.get('/api/shopify/stores', async (req, res, next) => {
 
 // Orders from Shopify
 app.get('/api/shopify/orders', requireShopAccess, async (req, res) => {
-  const { shop } = req.query;
+  const { shop, all } = req.query;
+
+  if (all === 'true') {
+    // Fetch orders from ALL stores for this account
+    const owner_id = req.user_id || 'default';
+    try {
+      const sr = await db.query('SELECT shop_domain, access_token FROM stores WHERE owner_id=$1 AND access_token IS NOT NULL', [owner_id]);
+      if (!sr.rows.length) return res.json([]);
+
+      let allOrders = [];
+      for (const store of sr.rows) {
+        try {
+          const r = await fetch(`https://${store.shop_domain}/admin/api/2025-04/orders.json?status=any&limit=50`, {
+            headers: { 'X-Shopify-Access-Token': store.access_token }
+          });
+          if (r.ok) {
+            const d = await r.json();
+            const orders = (d.orders || []).map(o => ({ ...o, shop_domain: store.shop_domain }));
+            allOrders = allOrders.concat(orders);
+          }
+        } catch(e) {
+          console.log(`Error fetching orders for ${store.shop_domain}:`, e.message);
+        }
+      }
+      return res.json(allOrders);
+    } catch(e) {
+      console.log('all orders fetch error:', e.message);
+      return res.status(500).json({ error: 'Failed to fetch orders' });
+    }
+  }
+
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. Open GoReturn in Shopify Admin first.' });
