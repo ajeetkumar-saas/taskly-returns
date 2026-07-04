@@ -529,12 +529,13 @@ async function requireShopAccess(req, res, next) {
 
     const authHeader = req.headers['authorization'] || '';
 
-    // Check for Bearer token (Shopify embedded app or session token)
+    // Check for Bearer token (Shopify App Bridge session token). Must actually verify the
+    // JWT signature and confirm it was issued for THIS shop — a bare length check let anyone
+    // pass an arbitrary 20+ char string plus ?shop=<any store> and access that store's data.
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
-      // Accept any Bearer token from Shopify embedded app (Shopify verified it)
-      // Token length check: valid Shopify tokens are at least 20 chars
-      if (token && token.length >= 20) {
+      const session = verifyShopifySessionToken(token);
+      if (session && session.shop === targetShop) {
         req.verifiedShop = targetShop;
         return next();
       }
@@ -547,14 +548,6 @@ async function requireShopAccess(req, res, next) {
       if (admin.rows.length > 0) { req.user = admin.rows[0]; req.verifiedShop = targetShop; return next(); } // platform owner — any shop
       const member = await pool.query('SELECT * FROM team_members WHERE session_token=$1', [token]);
       if (member.rows.length > 0 && member.rows[0].shop_domain === targetShop) { req.user = member.rows[0]; req.verifiedShop = targetShop; return next(); }
-    }
-
-    // If from Shopify embedded app with valid shop parameter, trust it
-    // (Shopify has already verified user access to this store)
-    const referer = req.headers['referer'] || '';
-    if (referer.includes('shopify.com') && targetShop && /^[a-z0-9-]+\.myshopify\.com$/.test(targetShop)) {
-      req.verifiedShop = targetShop;
-      return next(); // Trust Shopify's verification
     }
 
     return res.status(401).json({ error: 'Not authorized for this store' });

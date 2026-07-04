@@ -2065,7 +2065,7 @@ async function loadStoreAnalytics() {
   if (!currentShop) return;
   try {
     const r = await fetch("/api/analytics/orders?shop=" + currentShop, {
-      headers: getAuthHeaders(),
+      headers: await shopAuthHeaders(),
     });
     const d = await r.json();
     document.getElementById("oaTotal").textContent = d.total_orders;
@@ -2131,7 +2131,7 @@ async function loadStoreAnalytics() {
     }
 
     const r2 = await fetch("/api/analytics/returns-deep?shop=" + currentShop, {
-      headers: getAuthHeaders(),
+      headers: await shopAuthHeaders(),
     });
     const d2 = await r2.json();
     document.getElementById("retProductTb").innerHTML = d2.by_product.length
@@ -2331,7 +2331,7 @@ function applyPlanLocks() {
 // Automation Rules
 async function loadRules() {
   try {
-    const r = await fetch("/api/automation/rules?shop=" + currentShop);
+    const r = await fetch("/api/automation/rules?shop=" + currentShop, { headers: await shopAuthHeaders() });
     const d = await r.json();
     const tb = document.getElementById("rulesTb");
     if (!d.length) {
@@ -2359,7 +2359,7 @@ async function createRule() {
   if (!data.name) return showAlert("Rule name required", "error");
   await fetch("/api/automation/rules", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await shopAuthHeaders()) },
     body: JSON.stringify(data),
   });
   showAlert("Rule created!", "success");
@@ -2378,7 +2378,7 @@ async function deleteRule(id) {
 // Promotions
 async function loadPromos() {
   try {
-    const r = await fetch("/api/promotions?shop=" + currentShop);
+    const r = await fetch("/api/promotions?shop=" + currentShop, { headers: await shopAuthHeaders() });
     const d = await r.json();
     const tb = document.getElementById("promosTb");
     if (!d.length) {
@@ -2405,7 +2405,7 @@ async function createPromo() {
   if (!data.name) return showAlert("Name required", "error");
   await fetch("/api/promotions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await shopAuthHeaders()) },
     body: JSON.stringify(data),
   });
   showAlert("Promotion created!", "success");
@@ -2423,7 +2423,7 @@ async function togglePromo(id, active) {
 // Webhooks
 async function loadWebhooks() {
   try {
-    const r = await fetch("/api/webhooks?shop=" + currentShop);
+    const r = await fetch("/api/webhooks?shop=" + currentShop, { headers: await shopAuthHeaders() });
     const d = await r.json();
     const tb = document.getElementById("webhooksTb");
     if (!d.length) {
@@ -2444,7 +2444,7 @@ async function createWebhook() {
   if (!url) return showAlert("URL required", "error");
   await fetch("/api/webhooks", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await shopAuthHeaders()) },
     body: JSON.stringify({
       shop: currentShop,
       url,
@@ -2519,7 +2519,7 @@ async function deleteLocation(id) {
 async function loadFraud() {
   try {
     const r = await fetch("/api/analytics/fraud?shop=" + currentShop, {
-      headers: getAuthHeaders(),
+      headers: await shopAuthHeaders(),
     });
     const d = await r.json();
     const tb = document.getElementById("fraudTb");
@@ -2541,7 +2541,7 @@ async function loadFraud() {
 async function loadPincodeRisk() {
   try {
     const r = await fetch("/api/analytics/pincode-risk?shop=" + currentShop, {
-      headers: getAuthHeaders(),
+      headers: await shopAuthHeaders(),
     });
     const d = await r.json();
     const tb = document.getElementById("pinRiskTb");
