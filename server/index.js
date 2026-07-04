@@ -945,10 +945,13 @@ app.post('/api/auth/token-exchange', async (req, res) => {
       body: params.toString()
     });
     const text = await r.text();
-    console.log('Token exchange response:', r.status, text.substring(0, 250));
-    lastExchange.shopify_status = r.status; lastExchange.shopify_resp = text.substring(0, 250); lastExchange.stage = 'shopify-responded';
+    // Never log/store the raw response body here — it contains the plaintext access_token.
+    // Redact before logging or persisting to the (DEBUG_KEY-gated but still readable) lastExchange.
+    const redactedText = text.replace(/"access_token"\s*:\s*"[^"]*"/, '"access_token":"[redacted]"');
+    console.log('Token exchange response:', r.status, redactedText.substring(0, 250));
+    lastExchange.shopify_status = r.status; lastExchange.shopify_resp = redactedText.substring(0, 250); lastExchange.stage = 'shopify-responded';
     let d;
-    try { d = JSON.parse(text); } catch(e) { lastExchange.stage = 'parse-fail'; return res.status(400).json({ error: 'Invalid response from Shopify', status: r.status, body: text.substring(0, 200) }); }
+    try { d = JSON.parse(text); } catch(e) { lastExchange.stage = 'parse-fail'; return res.status(400).json({ error: 'Invalid response from Shopify', status: r.status, body: redactedText.substring(0, 200) }); }
     if (d.access_token) {
       const expiresAt = d.expires_in ? Date.now() + (d.expires_in * 1000) : 0;
       lastExchange.stage = 'success'; lastExchange.token_prefix = d.access_token.substring(0,10); lastExchange.expires_in = d.expires_in; lastExchange.has_refresh = !!d.refresh_token;
@@ -1434,13 +1437,11 @@ app.post('/api/returns/:id/refund', requireShopAccess, async (req, res) => {
 // A specific shop requires that shop's own session; omitting shop (cross-merchant "all stores"
 // view) is a platform-owner-only action.
 app.get('/api/returns', (req, res, next) => {
-  // For embedded app context: allow Bearer token OR shop param (Shopify admin context)
-  const authHeader = req.headers['authorization'] || '';
-  const hasBearer = authHeader.startsWith('Bearer ') && authHeader.length > 30;
-
+  // Shop-scoped request: delegate to requireShopAccess, which verifies the Bearer token's
+  // JWT signature and confirms it matches the requested shop (do NOT re-implement that check
+  // here — an earlier inline "Bearer token length > 30" shortcut let anyone read any shop's
+  // return data, including customer PII, by sending a fake Bearer token + ?shop=<victim>).
   if (req.query.shop && req.query.shop !== 'all') {
-    // Shop-scoped request: allow if Bearer token (embedded app) OR authenticated session
-    if (hasBearer) { req.verifiedShop = req.query.shop; return next(); }
     return requireShopAccess(req, res, next);
   }
   return requireOwner(req, res, next);
