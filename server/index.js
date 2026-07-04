@@ -434,6 +434,17 @@ await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_pri
       ip_address VARCHAR(50) DEFAULT '',
       created_at TIMESTAMP DEFAULT NOW()
     )`);
+
+    // Indexes — none existed anywhere before this. At today's data volume these build instantly
+    // (milliseconds, brief write-lock only), but shop_domain/session_token are the WHERE clause
+    // of nearly every query and every authenticated request respectively, so this matters
+    // increasingly as returns/merchants grow. Purely additive — no table structure or existing
+    // data is touched, IF NOT EXISTS makes this safe to run on every boot.
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_returns_shop_domain ON returns(shop_domain)`).catch(e=>console.log('idx_returns_shop_domain:',e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_returns_shop_order ON returns(shop_domain, order_id)`).catch(e=>console.log('idx_returns_shop_order:',e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_returns_customer_email ON returns(customer_email)`).catch(e=>console.log('idx_returns_customer_email:',e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_team_members_session_token ON team_members(session_token)`).catch(e=>console.log('idx_team_members_session_token:',e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_users_session_token ON admin_users(session_token)`).catch(e=>console.log('idx_admin_users_session_token:',e.message));
   } catch(e) {}
   console.log('DB ready');
 }
