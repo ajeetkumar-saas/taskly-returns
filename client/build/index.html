@@ -1258,8 +1258,8 @@ async function initEmbeddedApp() {
   const urlShop = new URLSearchParams(location.search).get('shop');
   if(urlShop) return; // Already have shop in URL
 
-  // Extract shop from Shopify admin URL: /store/SHOPNAME/apps/...
-  const pathMatch = location.pathname.match(/\/store\/([^\/]+)\//);
+  // Extract shop from Shopify admin URL: /store/SHOPNAME/apps/ or /store/SHOPNAME
+  const pathMatch = location.pathname.match(/\/store\/([^\/]+)/);
   if(pathMatch && pathMatch[1]) {
     const shop = pathMatch[1]; // e.g., "taskly-test-store"
     const normalized = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
