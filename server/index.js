@@ -413,6 +413,22 @@ async function requireOwner(req, res, next) {
   next();
 }
 
+// Session timeout middleware (30 min inactivity)
+const sessionActivity = {};
+async function checkSessionTimeout(req, res, next) {
+  const token = req.headers['x-auth-token'];
+  if (!token) return next();
+  const now = Date.now();
+  const lastActivity = sessionActivity[token] || now;
+  const inactivityMs = 30 * 60 * 1000; // 30 minutes
+  if (now - lastActivity > inactivityMs) {
+    delete sessionActivity[token];
+    return res.status(401).json({ error: 'Session expired due to inactivity. Please login again.' });
+  }
+  sessionActivity[token] = now;
+  next();
+}
+
 // Shop access + plan requirement (for premium features)
 // planName: 'starter', 'growth', or 'pro'
 function requirePlan(planName) {
