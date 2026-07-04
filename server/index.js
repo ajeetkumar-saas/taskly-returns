@@ -1193,6 +1193,8 @@ app.get('/api/shopify/orders', async (req, res) => {
           console.log(`Error fetching orders for ${store.shop_domain}:`, e.message);
         }
       }
+      // Newest first across all stores (each store's list is sorted, but concatenation isn't)
+      allOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       return res.json(allOrders);
     } catch(e) {
       console.log('all orders fetch error:', e.message);
