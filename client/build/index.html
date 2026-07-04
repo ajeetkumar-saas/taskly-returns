@@ -1143,26 +1143,31 @@ function getAuthHeaders(){const t=getAuthToken();return t?{'x-auth-token':t}:{};
 // standalone-dashboard login session.
 async function shopAuthHeaders(){
   const isEmbedded=new URLSearchParams(location.search).get('shop');
-  console.log('[shopAuthHeaders] isEmbedded:', isEmbedded, 'window.shopify:', !!window.shopify);
 
   if(isEmbedded&&window.shopify){
     try {
-      console.log('[shopAuthHeaders] Getting idToken from Shopify...');
-      const t=await Promise.race([
-        window.shopify.idToken(),
-        new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000))
-      ]);
-      console.log('[shopAuthHeaders] Got idToken:', !!t, 'length:', t?.length);
-      if(t){
-        const header = {'Authorization':'Bearer '+t};
-        console.log('[shopAuthHeaders] Returning Bearer token header');
-        return header;
+      // Try sessionToken first (modern Shopify App Bridge)
+      if(window.shopify.sessionToken){
+        const token = await Promise.race([
+          window.shopify.sessionToken(),
+          new Promise((_,r)=>setTimeout(()=>r(null),5000))
+        ]);
+        if(token) return {'Authorization':'Bearer '+token};
+      }
+
+      // Fallback to idToken if available
+      if(window.shopify.idToken){
+        const token = await Promise.race([
+          window.shopify.idToken(),
+          new Promise((_,r)=>setTimeout(()=>r(null),5000))
+        ]);
+        if(token) return {'Authorization':'Bearer '+token};
       }
     } catch(e) {
-      console.error('[shopAuthHeaders] Error getting idToken:', e.message);
+      console.error('[shopAuthHeaders] Error:', e);
     }
   }
-  console.log('[shopAuthHeaders] Falling back to getAuthHeaders');
+
   return getAuthHeaders();
 }
 
