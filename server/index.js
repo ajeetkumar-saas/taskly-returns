@@ -754,13 +754,23 @@ app.post('/api/admin/logout', async (req, res) => {
 
 // Team Members CRUD
 app.get('/api/team', authenticateRequest, async (req, res) => {
-  const members = await pool.query('SELECT id, name, email, role, status, last_login, created_at FROM team_members ORDER BY created_at DESC');
+  // Platform owner (admin_users) sees everyone; a shop's own admin/viewer (team_members) must
+  // only see their OWN shop's team — this previously had no shop_domain filter at all, meaning
+  // any team member of any shop could list every other shop's team members' names/emails/roles.
+  const members = req.user.role === 'owner'
+    ? await pool.query('SELECT id, name, email, role, status, last_login, created_at FROM team_members ORDER BY created_at DESC')
+    : await pool.query('SELECT id, name, email, role, status, last_login, created_at FROM team_members WHERE shop_domain=$1 ORDER BY created_at DESC', [req.user.shop_domain]);
   res.json(members.rows);
 });
 
 app.post('/api/team', authenticateRequest, async (req, res) => {
   if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can add team members' });
   const { name, email, role, shop_domain } = req.body;
+  // A shop-scoped admin can only invite members to their OWN shop — without this, an admin
+  // for Shop A could add a team member to any OTHER shop just by passing its domain here.
+  if (req.user.role !== 'owner' && shop_domain !== req.user.shop_domain) {
+    return res.status(403).json({ error: 'Cannot add team members to a different store' });
+  }
   if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
   try {
     const inviteToken = crypto.randomBytes(24).toString('hex');
@@ -821,6 +831,12 @@ app.post('/api/team/set-password', async (req, res) => {
 app.patch('/api/team/:id', authenticateRequest, async (req, res) => {
   if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can edit members' });
   const { name, role, password } = req.body;
+  // Scope by shop_domain unless the caller is the platform owner — otherwise a shop-scoped admin
+  // could edit/reset the password of a team member belonging to a DIFFERENT shop by guessing ids.
+  const shopFilter = req.user.role === 'owner' ? null : req.user.shop_domain;
+  const target = await pool.query('SELECT shop_domain FROM team_members WHERE id=$1', [req.params.id]);
+  if (!target.rows.length) return res.status(404).json({ error: 'Member not found' });
+  if (shopFilter && target.rows[0].shop_domain !== shopFilter) return res.status(404).json({ error: 'Member not found' });
   if (name) await pool.query('UPDATE team_members SET name=$1 WHERE id=$2', [name, req.params.id]);
   if (role) await pool.query('UPDATE team_members SET role=$1 WHERE id=$2', [role, req.params.id]);
   if (password) await pool.query('UPDATE team_members SET password_hash=$1 WHERE id=$2', [hashPassword(password), req.params.id]);
@@ -829,7 +845,10 @@ app.patch('/api/team/:id', authenticateRequest, async (req, res) => {
 
 app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
   if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove members' });
-  const m = await pool.query('SELECT name, email FROM team_members WHERE id=$1', [req.params.id]);
+  const shopFilter = req.user.role === 'owner' ? null : req.user.shop_domain;
+  const m = await pool.query('SELECT name, email, shop_domain FROM team_members WHERE id=$1', [req.params.id]);
+  if (!m.rows.length) return res.status(404).json({ error: 'Member not found' });
+  if (shopFilter && m.rows[0].shop_domain !== shopFilter) return res.status(404).json({ error: 'Member not found' });
   await pool.query('DELETE FROM team_members WHERE id=$1', [req.params.id]);
   await logActivity(req, 'Team Member Removed', `${m.rows[0]?.name} (${m.rows[0]?.email})`);
   res.json({ ok: true });
