@@ -1031,19 +1031,36 @@ app.get('/api/billing/plans', (req, res) => {
 });
 
 // Stores
-app.get('/api/shopify/stores', (req, res, next) => {
-  // With ?shop= param: validate that shop only sees its own record
-  // Without ?shop=: only platform owner can list all stores
-  if (req.query.shop) return requireShopAccess(req, res, next);
-  return requireOwner(req, res, next);
-}, async (req, res) => {
+app.get('/api/shopify/stores', async (req, res, next) => {
+  // Auth check: with ?shop= param validate shop access, without it require owner
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
   const { shop } = req.query;
   if (shop) {
-    const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
-    return res.json(r.rows);
+    // Shop-scoped: validate owner owns this shop
+    return requireShopAccess(req, res, next);
   }
-  const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores ORDER BY created_at DESC');
-  res.json(r.rows);
+  // All stores: owner only
+  const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
+  if (!admin.rows.length || admin.rows[0].role !== 'owner') {
+    return res.status(403).json({ error: 'Owner access required' });
+  }
+  req.user = admin.rows[0];
+  next();
+}, async (req, res) => {
+  const { shop } = req.query;
+  try {
+    if (shop) {
+      const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+      return res.json(r.rows);
+    }
+    const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores ORDER BY created_at DESC');
+    res.json(r.rows);
+  } catch(e) {
+    console.log('stores endpoint error:', e.message);
+    res.status(500).json({ error: 'Failed to fetch stores' });
+  }
 });
 
 // Orders from Shopify
