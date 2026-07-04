@@ -495,8 +495,22 @@ async function requireShopAccess(req, res, next) {
 
     const authHeader = req.headers['authorization'] || '';
     if (authHeader.startsWith('Bearer ')) {
-      const verified = verifyShopifySessionToken(authHeader.slice(7));
-      if (verified && verified.shop === targetShop) { req.verifiedShop = targetShop; return next(); }
+      try {
+        const token = authHeader.slice(7);
+        const verified = verifyShopifySessionToken(token);
+        if (verified) {
+          // Token verified: shop must match (extracted from token dest field)
+          const tokenShop = verified.shop || '';
+          if (tokenShop === targetShop) { req.verifiedShop = targetShop; return next(); }
+          // Also accept if normalized shops match
+          const normalizedTarget = targetShop.replace('.myshopify.com', '').toLowerCase();
+          const normalizedToken = tokenShop.replace('.myshopify.com', '').toLowerCase();
+          if (normalizedTarget === normalizedToken) { req.verifiedShop = targetShop; return next(); }
+        }
+      } catch(tokenErr) {
+        console.log('Bearer token verification exception:', tokenErr.message);
+      }
+      // If Bearer token failed, fall through to x-auth-token check
     }
 
     const token = req.headers['x-auth-token'];
