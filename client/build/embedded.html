@@ -2000,7 +2000,7 @@ async function loadStoreData() {
       <td style="font-size:11px">${x.shop_domain || "-"}</td>
       <td>#${x.order_number || x.order_id}</td>
       <td>${esc(x.customer_name || "-")}<div style="font-size:10px;color:var(--gray-400)">${esc(x.customer_email || "")}</div></td>
-      <td style="font-size:11px">${(x.product_name || "").substring(0, 30)}</td>
+      <td style="font-size:11px">${esc((x.product_name || "").substring(0, 30))}</td>
       <td><span class="badge badge-${x.type === "exchange" ? "processed" : "pending"}">${x.type || "return"}</span></td>
       <td>$${x.amount || 0}</td>
       <td><span class="badge badge-${x.status}">${x.status}</span></td>
@@ -2087,7 +2087,7 @@ async function loadStoreAnalytics() {
       ? d.top_cities
           .map(
             (c, i) =>
-              `<tr><td>${i + 1}</td><td><strong>${c.city}</strong></td><td>${c.count}</td></tr>`,
+              `<tr><td>${i + 1}</td><td><strong>${esc(c.city)}</strong></td><td>${c.count}</td></tr>`,
           )
           .join("")
       : '<tr><td colspan="3" class="empty">No data</td></tr>';
@@ -2095,7 +2095,7 @@ async function loadStoreAnalytics() {
       ? d.top_pincodes
           .map(
             (p, i) =>
-              `<tr><td>${i + 1}</td><td><strong>${p.pincode}</strong></td><td>${p.count}</td></tr>`,
+              `<tr><td>${i + 1}</td><td><strong>${esc(p.pincode)}</strong></td><td>${p.count}</td></tr>`,
           )
           .join("")
       : '<tr><td colspan="3" class="empty">No data</td></tr>';
@@ -2103,7 +2103,7 @@ async function loadStoreAnalytics() {
       ? d.top_states
           .map(
             (s, i) =>
-              `<tr><td>${i + 1}</td><td><strong>${s.state}</strong></td><td>${s.count}</td></tr>`,
+              `<tr><td>${i + 1}</td><td><strong>${esc(s.state)}</strong></td><td>${s.count}</td></tr>`,
           )
           .join("")
       : '<tr><td colspan="3" class="empty">No data</td></tr>';
@@ -2144,7 +2144,7 @@ async function loadStoreAnalytics() {
       : '<tr><td colspan="5" class="empty">No return data yet</td></tr>';
     document.getElementById("retCityTb").innerHTML = d2.by_city.length
       ? d2.by_city
-          .map((c) => `<tr><td><strong>${c.city}</strong></td><td>${c.count}</td></tr>`)
+          .map((c) => `<tr><td><strong>${esc(c.city)}</strong></td><td>${c.count}</td></tr>`)
           .join("")
       : '<tr><td colspan="2" class="empty">No return data yet</td></tr>';
   } catch (e) {
@@ -2478,7 +2478,7 @@ async function loadLocations() {
     tb.innerHTML = d
       .map(
         (x) =>
-          `<tr><td><strong>${x.name}</strong></td><td style="font-size:11px">${x.address || "-"}</td><td>${x.city || "-"}</td><td>${x.state || "-"}</td><td>${x.pincode || "-"}</td><td>${x.phone || "-"}</td><td>${x.is_default ? '<span class="badge badge-approved">Default</span>' : "-"}</td><td><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="deleteLocation(${x.id})"><i class="fas fa-trash"></i></button></td></tr>`,
+          `<tr><td><strong>${esc(x.name)}</strong></td><td style="font-size:11px">${esc(x.address) || "-"}</td><td>${esc(x.city) || "-"}</td><td>${esc(x.state) || "-"}</td><td>${esc(x.pincode) || "-"}</td><td>${esc(x.phone) || "-"}</td><td>${x.is_default ? '<span class="badge badge-approved">Default</span>' : "-"}</td><td><button class="action-btn" style="background:var(--danger-light);color:var(--danger)" onclick="deleteLocation(${x.id})"><i class="fas fa-trash"></i></button></td></tr>`,
       )
       .join("");
   } catch (e) {}
@@ -2535,7 +2535,7 @@ async function loadFraud() {
     tb.innerHTML = d
       .map(
         (c) =>
-          `<tr><td><strong>${c.customer_name}</strong></td><td style="font-size:11px">${c.customer_email}</td><td><strong>${c.return_count}</strong></td><td class="amount">$${c.total_amount.toLocaleString("en-IN")}</td><td style="font-size:11px">${fmtDate(c.last_return)}</td><td><span class="badge" style="background:${c.risk === "high" ? "var(--danger-light)" : c.risk === "medium" ? "var(--warning-light)" : "var(--success-light)"};color:${c.risk === "high" ? "var(--danger)" : c.risk === "medium" ? "var(--warning)" : "var(--success)"}">${c.risk.toUpperCase()}</span></td></tr>`,
+          `<tr><td><strong>${esc(c.customer_name)}</strong></td><td style="font-size:11px">${esc(c.customer_email)}</td><td><strong>${c.return_count}</strong></td><td class="amount">$${c.total_amount.toLocaleString("en-IN")}</td><td style="font-size:11px">${fmtDate(c.last_return)}</td><td><span class="badge" style="background:${c.risk === "high" ? "var(--danger-light)" : c.risk === "medium" ? "var(--warning-light)" : "var(--success-light)"};color:${c.risk === "high" ? "var(--danger)" : c.risk === "medium" ? "var(--warning)" : "var(--success)"}">${c.risk.toUpperCase()}</span></td></tr>`,
       )
       .join("");
   } catch (e) {}
@@ -2557,7 +2557,7 @@ async function loadPincodeRisk() {
     tb.innerHTML = d
       .map(
         (p) =>
-          `<tr><td><strong>${p.pincode}</strong></td><td>${p.city}</td><td>${p.orders}</td><td>${p.returns}</td><td><strong style="color:${p.return_rate >= 30 ? "var(--danger)" : p.return_rate >= 15 ? "var(--warning)" : "var(--success)"}">${p.return_rate}%</strong></td><td><span class="badge" style="background:${p.risk === "high" ? "var(--danger-light)" : p.risk === "medium" ? "var(--warning-light)" : "var(--success-light)"};color:${p.risk === "high" ? "var(--danger)" : p.risk === "medium" ? "var(--warning)" : "var(--success)"}">${p.risk.toUpperCase()}</span></td><td>${p.risk === "high" ? '<span style="font-size:10px;color:var(--danger)">⚠️ Disable COD</span>' : "-"}</td></tr>`,
+          `<tr><td><strong>${esc(p.pincode)}</strong></td><td>${esc(p.city)}</td><td>${p.orders}</td><td>${p.returns}</td><td><strong style="color:${p.return_rate >= 30 ? "var(--danger)" : p.return_rate >= 15 ? "var(--warning)" : "var(--success)"}">${p.return_rate}%</strong></td><td><span class="badge" style="background:${p.risk === "high" ? "var(--danger-light)" : p.risk === "medium" ? "var(--warning-light)" : "var(--success-light)"};color:${p.risk === "high" ? "var(--danger)" : p.risk === "medium" ? "var(--warning)" : "var(--success)"}">${p.risk.toUpperCase()}</span></td><td>${p.risk === "high" ? '<span style="font-size:10px;color:var(--danger)">⚠️ Disable COD</span>' : "-"}</td></tr>`,
       )
       .join("");
   } catch (e) {}
