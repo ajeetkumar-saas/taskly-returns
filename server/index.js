@@ -2951,13 +2951,19 @@ async function runDataBackup(triggeredManually) {
 // Force register refunds/create webhook for all stores (admin only)
 app.post('/api/admin/register-webhooks', requireOwner, async (req, res) => {
   try {
-    const stores = await pool.query('SELECT shop_domain, access_token FROM shopify_stores WHERE access_token IS NOT NULL');
+    const stores = await pool.query('SELECT shop_domain FROM shopify_stores');
     const results = [];
     for (const row of stores.rows) {
       try {
+        // Always go through getValidToken() — it decrypts (and refreshes if needed). Reading
+        // access_token directly from the row would return raw ciphertext for any store whose
+        // token has been encrypted since the AES-256-GCM migration, and sending that to Shopify
+        // as-is would fail with 401 for every such store.
+        const token = await getValidToken(row.shop_domain);
+        if (!token) { results.push({ shop: row.shop_domain, error: 'no valid token' }); continue; }
         const r = await fetch(`https://${row.shop_domain}/admin/api/2025-04/webhooks.json`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': row.access_token },
+          headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
           body: JSON.stringify({ webhook: { topic: 'refunds/create', address: `${APP_URL}/api/webhooks/shopify/refunds-create`, format: 'json' } })
         });
         const d = await r.json();
