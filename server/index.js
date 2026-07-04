@@ -433,10 +433,20 @@ async function checkSessionTimeout(req, res, next) {
 // planName: 'starter', 'growth', or 'pro'
 function requirePlan(planName) {
   return async (req, res, next) => {
-    await requireShopAccess(req, res, () => {
+    await requireShopAccess(req, res, async () => {
       // After requireShopAccess validates shop, check plan
       const targetShop = req.query.shop || req.body?.shop_domain;
       if (!targetShop) return res.status(400).json({ error: 'shop required' });
+
+      // Platform owner (admin dashboard) always has full visibility - plan
+      // gating applies to sellers, not to the owner monitoring their platform
+      const xToken = req.headers['x-auth-token'];
+      if (xToken) {
+        try {
+          const owner = await pool.query('SELECT role FROM admin_users WHERE session_token=$1', [xToken]);
+          if (owner.rows.length && owner.rows[0].role === 'owner') return next();
+        } catch(e) { /* fall through to plan check */ }
+      }
 
       pool.query('SELECT plan FROM shopify_stores WHERE shop_domain=$1', [targetShop])
         .then(r => {
