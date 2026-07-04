@@ -1162,34 +1162,27 @@ app.get('/api/shopify/stores', async (req, res, next) => {
 app.get('/api/shopify/orders', async (req, res) => {
   const { shop, all } = req.query;
 
-  // For 'all' requests, handle auth separately
+  // For 'all' requests (admin "All Stores" view): owner auth via x-auth-token,
+  // same pattern as GET /api/shopify/stores
   if (all === 'true') {
-    // Check authentication
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    let owner_id = null;
-
-    if (!token) {
-      const cookies = req.headers.cookie || '';
-      const authMatch = cookies.match(/auth_token=([^;]+)/);
-      const authToken = authMatch ? authMatch[1] : null;
-      if (!authToken) return res.status(401).json({ error: 'Unauthorized' });
-      const ar = await db.query('SELECT owner_id FROM sessions WHERE token=$1', [authToken]);
-      if (!ar.rows.length) return res.status(401).json({ error: 'Session expired' });
-      owner_id = ar.rows[0].owner_id;
-    } else {
-      owner_id = 'default'; // Bearer tokens are from embedded app
+    const token = req.headers['x-auth-token'];
+    if (!token) return res.status(401).json({ error: 'Authentication required' });
+    const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
+    if (!admin.rows.length || admin.rows[0].role !== 'owner') {
+      return res.status(403).json({ error: 'Owner access required' });
     }
 
     try {
-      const sr = await db.query('SELECT shop_domain, access_token FROM stores WHERE owner_id=$1 AND access_token IS NOT NULL', [owner_id]);
+      const sr = await pool.query('SELECT shop_domain FROM shopify_stores ORDER BY created_at DESC');
       if (!sr.rows.length) return res.json([]);
 
       let allOrders = [];
       for (const store of sr.rows) {
         try {
+          const tok = await getValidToken(store.shop_domain);
+          if (!tok) continue;
           const r = await fetch(`https://${store.shop_domain}/admin/api/2025-04/orders.json?status=any&limit=50`, {
-            headers: { 'X-Shopify-Access-Token': store.access_token }
+            headers: { 'X-Shopify-Access-Token': tok }
           });
           if (r.ok) {
             const d = await r.json();

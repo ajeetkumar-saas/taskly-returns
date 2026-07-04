@@ -384,7 +384,7 @@ Changed My Mind</textarea></div>
     </div>
 
     <!-- Orders Page -->
-    <div class="page" id="page-orders"><div class="card"><div class="card-hdr"><h3>Shopify Orders</h3></div><div class="card-body" style="padding:16px"><div style="overflow-x:auto"><table><thead><tr><th>Order</th><th>Customer</th><th>Email</th><th>Total</th><th>Payment</th><th>Fulfillment</th><th>Date</th></tr></thead><tbody id="ordersTb"><tr><td colspan="7" class="empty"><i class="fas fa-shopping-bag"></i>Loading orders...</td></tr></tbody></table></div></div></div></div>
+    <div class="page" id="page-orders"><div class="card"><div class="card-hdr"><h3><i class="fas fa-external-link-alt" style="margin-right:8px;cursor:pointer;color:var(--primary)" title="Open dashboard in new tab" onclick="window.open('https://goreturn.pro/dashboard','_blank')"></i>Shopify Orders</h3></div><div class="card-body" style="padding:16px"><div style="overflow-x:auto"><table><thead><tr><th>Order</th><th>Customer</th><th>Email</th><th>Total</th><th>Payment</th><th>Fulfillment</th><th>Date</th></tr></thead><tbody id="ordersTb"><tr><td colspan="7" class="empty"><i class="fas fa-shopping-bag"></i>Loading orders...</td></tr></tbody></table></div></div></div></div>
 
     <!-- Stores Page -->
     <div class="page" id="page-stores"><div class="card"><div class="card-hdr"><h3><i class="fas fa-store" style="color:var(--primary);margin-right:8px"></i>All Stores <span id="storesCount" style="font-size:12px;color:var(--gray-400);font-weight:400"></span></h3></div><div class="card-body"><div id="connectedStores"></div><div class="connect-section" style="margin-top:16px"><input type="text" id="shopDomain" placeholder="yourstore.myshopify.com"><button class="btn btn-primary" onclick="connectShop()"><i class="fas fa-plug"></i> Connect New Store</button></div></div></div></div>
@@ -1259,9 +1259,20 @@ async function initEmbeddedApp() {
   if(urlShop) currentShop = urlShop;
 }
 
+// Set customer portal link directly from shop (does not depend on stores API)
+function setPortalLinks() {
+  if(!currentShop) return;
+  const pUrl = 'https://goreturn.pro/return.html?shop=' + encodeURIComponent(currentShop);
+  const a = document.getElementById('portalLink');
+  if(a){ a.href = pUrl; a.textContent = pUrl; }
+  const pv = document.getElementById('portalPreview');
+  if(pv) pv.href = pUrl;
+}
+
 // Run initialization
 (async () => {
   try { await initEmbeddedApp(); } catch(e) { console.error('[GoReturn] Init error:', e); }
+  try { setPortalLinks(); } catch(e) { console.log('Portal link error:', e); }
   checkDashboardAuth();
   loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Load error:',e));
 })();
