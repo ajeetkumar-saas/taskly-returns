@@ -1184,10 +1184,10 @@ app.get('/api/shopify/stores', async (req, res, next) => {
   const { shop } = req.query;
   try {
     if (shop) {
-      const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at, trial_ends_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+      const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at, trial_ends_at, custom_price, custom_returns_limit, custom_features FROM shopify_stores WHERE shop_domain=$1', [shop]);
       return res.json(r.rows);
     }
-    const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at, trial_ends_at FROM shopify_stores ORDER BY created_at DESC');
+    const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at, trial_ends_at, custom_price, custom_returns_limit, custom_features FROM shopify_stores ORDER BY created_at DESC');
     res.json(r.rows);
   } catch(e) {
     console.log('stores endpoint error:', e.message);
