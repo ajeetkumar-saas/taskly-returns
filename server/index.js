@@ -233,7 +233,10 @@ async function initDB() {
   await pool.query(`ALTER TABLE shopify_stores DROP COLUMN IF EXISTS token_expires_at`).catch(e=>console.log('drop token_expires_at:',e.message));
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN token_expires_at BIGINT DEFAULT 0`).catch(e=>console.log('add token_expires_at:',e.message));
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP DEFAULT NULL`).catch(e=>console.log('add trial_ends_at:',e.message));
-  await pool.query(`
+await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_price NUMERIC(10,2) DEFAULT NULL`).catch(e=>console.log('add custom_price:',e.message));
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_returns_limit INTEGER DEFAULT NULL`).catch(e=>console.log('add custom_returns_limit:',e.message));
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_features JSONB DEFAULT NULL`).catch(e=>console.log('add custom_features:',e.message));
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS returns (
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) DEFAULT '',
@@ -449,10 +452,30 @@ function requirePlan(planName) {
         } catch(e) { /* fall through to plan check */ }
       }
 
-      pool.query('SELECT plan FROM shopify_stores WHERE shop_domain=$1', [targetShop])
+      pool.query('SELECT plan, custom_features FROM shopify_stores WHERE shop_domain=$1', [targetShop])
         .then(r => {
           if (!r.rows.length) return res.status(404).json({ error: 'Store not found' });
           const storePlan = r.rows[0].plan || 'free';
+
+          // Custom plan: check if feature is in custom_features
+          if (storePlan === 'custom') {
+            try {
+              const features = JSON.parse(r.rows[0].custom_features || '{}');
+              // Map feature names to keys in custom_features
+              const featureMap = {
+                starter: 'analytics',
+                growth: 'fraud',
+                pro: 'webhooks'
+              };
+              const featureKey = featureMap[planName];
+              if (featureKey && features[featureKey] !== true) {
+                return res.status(402).json({ error: `This feature requires a custom plan upgrade` });
+              }
+              return next();
+            } catch(e) { return res.status(500).json({ error: 'Custom feature check failed' }); }
+          }
+
+          // Standard plans: tier-based check
           const plans = { free: 0, starter: 1, growth: 2, pro: 3 };
           const required = plans[planName] || 1;
           const current = plans[storePlan] || 0;
@@ -2236,6 +2259,52 @@ app.post('/api/admin/free-access', requireOwner, async (req, res) => {
   const { shop, plan, duration_days } = req.body;
   await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan || 'free', shop]);
   res.json({ ok: true, shop, plan, duration_days });
+});
+
+// Custom Plans API (for seller-specific custom pricing/limits)
+app.post('/api/admin/custom-plans', requireOwner, async (req, res) => {
+  const { shop, price, returns_limit, features } = req.body;
+  if (!shop || price === undefined || !returns_limit) return res.status(400).json({ error: 'shop, price, returns_limit required' });
+  try {
+    await pool.query(
+      'UPDATE shopify_stores SET plan=$1, custom_price=$2, custom_returns_limit=$3, custom_features=$4 WHERE shop_domain=$5',
+      ['custom', price, returns_limit, JSON.stringify(features || {}), shop]
+    );
+    await logActivity(req, 'Custom Plan Created', `${shop}: $${price}/mo, ${returns_limit} returns`);
+    res.json({ ok: true, shop, price, returns_limit, features });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/custom-plans', requireOwner, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT shop_domain, store_name, plan, custom_price, custom_returns_limit, custom_features FROM shopify_stores WHERE plan=$1 ORDER BY created_at DESC', ['custom']);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/admin/custom-plans/:shop', requireOwner, async (req, res) => {
+  const { shop } = req.params;
+  const { price, returns_limit, features } = req.body;
+  try {
+    await pool.query(
+      'UPDATE shopify_stores SET custom_price=$1, custom_returns_limit=$2, custom_features=$3 WHERE shop_domain=$4',
+      [price, returns_limit, JSON.stringify(features || {}), shop]
+    );
+    await logActivity(req, 'Custom Plan Updated', `${shop}: $${price}/mo, ${returns_limit} returns`);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/custom-plans/:shop', requireOwner, async (req, res) => {
+  const { shop } = req.params;
+  try {
+    await pool.query(
+      'UPDATE shopify_stores SET plan=$1, custom_price=NULL, custom_returns_limit=NULL, custom_features=NULL WHERE shop_domain=$2',
+      ['starter', shop]
+    );
+    await logActivity(req, 'Custom Plan Deleted', `${shop}: reverted to starter`);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/admin/offers', requireOwner, async (req, res) => {

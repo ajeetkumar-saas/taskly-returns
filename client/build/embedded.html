@@ -804,7 +804,7 @@ async function loadStores(){const embeddedShop=new URLSearchParams(location.sear
         <div><div style="font-weight:600;font-size:14px">${x.store_name||x.shop_domain}</div><div style="font-size:11px;color:var(--gray-400)">${x.shop_domain}</div></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-${x.plan==='pro'?'approved':x.plan==='growth'?'processed':'pending'}">${(x.plan||'starter').toUpperCase()}</span><i class="fas fa-chevron-right" style="color:var(--gray-400);font-size:12px"></i></div>
-    </div>`).join('');const sw=document.getElementById('storeSwitcher');sw.style.display='inline-block';sw.innerHTML=s.map(x=>`<option value="${x.shop_domain}" ${x.shop_domain===currentShop?'selected':''}>${x.store_name||x.shop_domain} · ${(x.plan||'free').toUpperCase()}${x.trial_ends_at?' ('+getTrialLabel(x.trial_ends_at)+')':''}</option>`).join('');if(embeddedShop){sw.disabled=true;sw.style.appearance='none';sw.style.cursor='default';}else{sw.disabled=false;}const portalOrigin='https://goreturn.pro';const portalUrl=portalOrigin+'/return.html?shop='+currentShop;document.getElementById('portalLink').href=portalUrl;document.getElementById('portalLink').textContent=portalUrl;document.getElementById('portalPreview').href=portalUrl;applyPlanLocks();}else{el.innerHTML='<p style="color:var(--gray-400);font-size:12px">No stores connected</p>';}}
+    </div>`).join('');const sw=document.getElementById('storeSwitcher');sw.style.display='inline-block';sw.innerHTML=s.map(x=>`<option value="${x.shop_domain}" ${x.shop_domain===currentShop?'selected':''}>${x.store_name||x.shop_domain} · ${x.plan==="custom"?"CUSTOM ($"+x.custom_price+"/mo)":(x.plan||'free').toUpperCase()}${x.trial_ends_at?' ('+getTrialLabel(x.trial_ends_at)+')':''}</option>`).join('');if(embeddedShop){sw.disabled=true;sw.style.appearance='none';sw.style.cursor='default';}else{sw.disabled=false;}const portalOrigin='https://goreturn.pro';const portalUrl=portalOrigin+'/return.html?shop='+currentShop;document.getElementById('portalLink').href=portalUrl;document.getElementById('portalLink').textContent=portalUrl;document.getElementById('portalPreview').href=portalUrl;applyPlanLocks();}else{el.innerHTML='<p style="color:var(--gray-400);font-size:12px">No stores connected</p>';}}
 function openStore(shop){const sw=document.getElementById('storeSwitcher');if(sw)sw.value=shop;switchStore(shop);loadStores();showPage('dashboard');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));const dn=document.querySelector('.nav-item[onclick*="dashboard"]');if(dn)dn.classList.add('active');showAlert('Switched to '+(allStores.find(x=>x.shop_domain===shop)?.store_name||shop),'success');}
 function switchStore(shop){currentShop=shop;localStorage.setItem('gr_current_shop',shop);const st=allStores.find(x=>x.shop_domain===shop);currentPlan=st?.plan||'free';const portalOrigin='https://goreturn.pro';const portalUrl=portalOrigin+'/return.html?shop='+currentShop;document.getElementById('portalLink').href=portalUrl;document.getElementById('portalLink').textContent=portalUrl;document.getElementById('portalPreview').href=portalUrl;applyPlanLocks();loadReturns().then(()=>{if(typeof renderDashCharts==='function')renderDashCharts();});if(typeof loadAnalytics==='function')loadAnalytics(30);}
 
@@ -1271,6 +1271,11 @@ function setPortalLinks() {
   checkDashboardAuth();
   loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Load error:',e));
 })();
+
+function getPlanDisplay(store){
+  if(store.plan==='custom') return 'CUSTOM ($'+store.custom_price+'/mo)';
+  return (store.plan||'free').toUpperCase();
+}
 </script>
 </body>
 </html>
