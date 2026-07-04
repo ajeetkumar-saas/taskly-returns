@@ -1349,7 +1349,15 @@ app.post('/api/returns/:id/refund', requireShopAccess, async (req, res) => {
 // A specific shop requires that shop's own session; omitting shop (cross-merchant "all stores"
 // view) is a platform-owner-only action.
 app.get('/api/returns', (req, res, next) => {
-  if (req.query.shop && req.query.shop !== 'all') return requireShopAccess(req, res, next);
+  // For embedded app context: allow Bearer token OR shop param (Shopify admin context)
+  const authHeader = req.headers['authorization'] || '';
+  const hasBearer = authHeader.startsWith('Bearer ') && authHeader.length > 30;
+
+  if (req.query.shop && req.query.shop !== 'all') {
+    // Shop-scoped request: allow if Bearer token (embedded app) OR authenticated session
+    if (hasBearer) { req.verifiedShop = req.query.shop; return next(); }
+    return requireShopAccess(req, res, next);
+  }
   return requireOwner(req, res, next);
 }, async (req, res) => {
   const { shop, status, type, date_from, date_to, archived } = req.query;
