@@ -1170,9 +1170,17 @@ app.get('/api/billing/confirm', async (req, res) => {
         headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
         body: JSON.stringify({ recurring_application_charge: { id: charge_id } })
       });
-      const planData = PLANS[plan] || PLANS.starter;
+      // Derive the plan from what the merchant ACTUALLY approved on Shopify (the charge's real
+      // price), not the client-supplied ?plan= query param. Trusting the query param would let
+      // a merchant approve a cheap plan, then replay this confirm URL with a different ?plan=
+      // to grant themselves a higher tier's features for free — the charge_id and its accepted
+      // status are real, but the plan name was never cryptographically tied to them.
+      const chargePrice = parseFloat(charge.price);
+      const verifiedPlanKey = Object.keys(PLANS).find(k => PLANS[k].price === chargePrice) || 'starter';
+      const planData = PLANS[verifiedPlanKey];
       const trialEndsAt = planData.trial_days > 0 ? new Date(Date.now() + planData.trial_days * 86400000) : null;
-      await pool.query('UPDATE shopify_stores SET plan=$1, trial_ends_at=$2 WHERE shop_domain=$3', [plan || 'starter', trialEndsAt, shop]);
+      await pool.query('UPDATE shopify_stores SET plan=$1, trial_ends_at=$2 WHERE shop_domain=$3', [verifiedPlanKey, trialEndsAt, shop]);
+      return res.redirect(`/?shop=${shop}&connected=true&plan=${verifiedPlanKey}`);
     }
     res.redirect(`/?shop=${shop}&connected=true&plan=${plan}`);
   } catch(e) {
