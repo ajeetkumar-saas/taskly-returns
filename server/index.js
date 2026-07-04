@@ -2933,7 +2933,7 @@ app.post('/api/webhooks/app-uninstalled', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none', last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot' }));
 
 // Debug/support endpoints — gated by a dedicated DEBUG_KEY env var (never hardcoded, never the
 // same secret used anywhere else). Fails CLOSED: if DEBUG_KEY isn't set in the environment, these
@@ -3032,6 +3032,7 @@ app.get('*', (req, res) => {
 // project is lost. Runs daily and emails a JSON snapshot of all business data (returns, stores,
 // settings, team) to the admin's inbox — an off-site copy independent of Railway.
 // Access tokens / passwords are deliberately excluded; reconnecting a store just needs a re-auth.
+let lastSuccessfulBackupAt = null; // exposed via /api/health so backup health is visible without digging through email
 async function runDataBackup(triggeredManually) {
   try {
     const tables = ['shopify_stores', 'returns', 'store_settings', 'team_members', 'admin_users', 'activity_log'];
@@ -3065,9 +3066,18 @@ async function runDataBackup(triggeredManually) {
       [{ filename: `goreturn-backup-${dateStr}.json`, content: base64 }]
     );
     console.log(`Backup ${triggeredManually ? '(manual)' : '(scheduled)'} ${ok ? 'sent' : 'FAILED to send'} — ${dump.returns.length} returns, ${dump.shopify_stores.length} stores`);
+    if (ok) {
+      lastSuccessfulBackupAt = new Date().toISOString();
+    } else {
+      // The backup itself failed to send — this previously only showed up as a console.log line
+      // nobody would see. Try a second, much simpler alert (no large attachment) since the
+      // original failure might specifically be attachment-size/delivery related.
+      notifyAdmin('🚨 GoReturn Backup FAILED to send', `<p>The ${triggeredManually ? 'manual' : 'scheduled'} backup for ${dateStr} generated successfully (${dump.returns.length} returns, ${dump.shopify_stores.length} stores) but the email failed to send.</p><p>Last known good backup: ${lastSuccessfulBackupAt || 'none recorded this run'}</p>`).catch(()=>{});
+    }
     return { ok, returns: dump.returns.length, stores: dump.shopify_stores.length };
   } catch(e) {
     console.log('Backup error:', e.message);
+    notifyAdmin('🚨 GoReturn Backup Failed (Exception)', `<p>Error generating backup: ${e.message}</p><p>Last known good backup: ${lastSuccessfulBackupAt || 'none recorded this run'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
     return { ok: false, error: e.message };
   }
 }
