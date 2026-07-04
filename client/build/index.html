@@ -1143,7 +1143,26 @@ function getAuthHeaders(){const t=getAuthToken();return t?{'x-auth-token':t}:{};
 // standalone-dashboard login session.
 async function shopAuthHeaders(){
   const isEmbedded=new URLSearchParams(location.search).get('shop');
-  if(isEmbedded&&window.shopify){try{const t=await Promise.race([shopify.idToken(),new Promise((_,r)=>setTimeout(()=>r(new Error('t')),3000))]);if(t)return{'Authorization':'Bearer '+t};}catch(e){}}
+  console.log('[shopAuthHeaders] isEmbedded:', isEmbedded, 'window.shopify:', !!window.shopify);
+
+  if(isEmbedded&&window.shopify){
+    try {
+      console.log('[shopAuthHeaders] Getting idToken from Shopify...');
+      const t=await Promise.race([
+        window.shopify.idToken(),
+        new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000))
+      ]);
+      console.log('[shopAuthHeaders] Got idToken:', !!t, 'length:', t?.length);
+      if(t){
+        const header = {'Authorization':'Bearer '+t};
+        console.log('[shopAuthHeaders] Returning Bearer token header');
+        return header;
+      }
+    } catch(e) {
+      console.error('[shopAuthHeaders] Error getting idToken:', e.message);
+    }
+  }
+  console.log('[shopAuthHeaders] Falling back to getAuthHeaders');
   return getAuthHeaders();
 }
 
