@@ -1079,7 +1079,7 @@ function applyRoleAccess(){
     el.style.display=roleCanAccess(p)?'':'none';
   });
 }
-function canAccess(page){if(!roleCanAccess(page))return false;if(currentPlan==='custom'&&currentStore?.custom_features){try{const features=JSON.parse(currentStore.custom_features||'{}');const featureMap={exchanges:'exchanges',analytics:'analytics',export:'export',locations:'locations',notifications:'notifications',logistics:'logistics',automation:'automation',promotions:'promotions',fraud:'fraud',pincode:'pincode-risk',webhooks:'webhooks'};const featureName=featureMap[page]||page;if(featureName in features){return features[featureName]===true;}}catch(e){}}const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;return allowed.includes(page);}
+function canAccess(page){if(!roleCanAccess(page))return false;if(currentPlan==='custom'&&currentStore?.custom_features){try{const f=JSON.parse(currentStore.custom_features||'{}');if(page in f)return f[page]===true;if(page==='pincode-risk'&&'pincode' in f)return f['pincode']===true;}catch(e){console.log('Feature parse error:',e);}}const allowed=PLAN_ACCESS[currentPlan]||PLAN_ACCESS.free;return allowed.includes(page);}
 function upgradeToPlan(plan){if(!currentShop)return showAlert('Store not detected','error');location.href='/api/billing/create?shop='+encodeURIComponent(currentShop)+'&plan='+plan;}
 function getTrialDaysLeft(trialEndsAt){if(!trialEndsAt)return null;const now=new Date();const end=new Date(trialEndsAt);const daysLeft=Math.ceil((end-now)/(1000*60*60*24));return daysLeft>0?daysLeft:null;}
 function getTrialLabel(trialEndsAt){const days=getTrialDaysLeft(trialEndsAt);if(!days)return 'Trial expired';if(days===1)return '1 day left';return days+' days left in trial';}
