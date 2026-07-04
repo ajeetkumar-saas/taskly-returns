@@ -9,6 +9,35 @@ const { Pool } = require('pg');
 
 let lastEmailError = '';
 let lastExchange = { stage: 'none' };
+
+// AES-256-GCM encryption for sensitive credentials (Shiprocket passwords) stored in DB.
+// Requires CREDENTIAL_ENCRYPTION_KEY env var (32-byte hex = 64 hex chars). If not set,
+// falls back to storing plaintext so existing deploys don't break before the key is added.
+function encryptCredential(plaintext) {
+  const key = process.env.CREDENTIAL_ENCRYPTION_KEY;
+  if (!key || key.length < 64) return plaintext; // fallback: no key set yet
+  const keyBuf = Buffer.from(key.slice(0, 64), 'hex');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyBuf, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return 'enc:' + Buffer.concat([iv, tag, encrypted]).toString('base64');
+}
+function decryptCredential(stored) {
+  if (!stored || !stored.startsWith('enc:')) return stored; // plaintext fallback
+  const key = process.env.CREDENTIAL_ENCRYPTION_KEY;
+  if (!key || key.length < 64) return stored.slice(4); // key missing — best effort
+  try {
+    const keyBuf = Buffer.from(key.slice(0, 64), 'hex');
+    const buf = Buffer.from(stored.slice(4), 'base64');
+    const iv = buf.slice(0, 12);
+    const tag = buf.slice(12, 28);
+    const encrypted = buf.slice(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuf, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(encrypted) + decipher.final('utf8');
+  } catch(e) { console.log('Credential decrypt error:', e.message); return ''; }
+}
 async function sendEmail(to, subject, html, attachments) {
   if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
   try {
@@ -111,6 +140,8 @@ app.use('/api/', rateLimit(180, 60 * 1000)); // generous default cap for all API
 app.use('/api/returns', rateLimit(20, 60 * 1000)); // stricter cap on return submissions specifically
 app.use('/api/admin/login', rateLimit(10, 60 * 1000)); // brute-force protection on login
 app.use('/api/admin/verify-otp', rateLimit(10, 60 * 1000)); // prevent OTP brute force
+app.use('/api/shiprocket', rateLimit(15, 60 * 1000)); // prevent courier API quota burn
+app.use('/api/logistics', rateLimit(15, 60 * 1000)); // prevent courier API quota burn
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -828,7 +859,7 @@ app.post('/api/auth/token-exchange', async (req, res) => {
       console.log('Token exchange no token, error:', d.error || d.error_description || 'unknown');
       res.status(400).json({ error: 'No access_token in response' });
     }
-  } catch(e) { console.log('Token exchange error:', e.message); res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('Token exchange error:', e.message); res.status(500).json({ error: 'Token exchange failed' }); }
 });
 
 // OAuth CSRF protection: the `state` nonce sent on the install redirect must match what we
@@ -1208,7 +1239,8 @@ app.post('/api/returns/:id/refund', requireShopAccess, async (req, res) => {
     res.json({ ok: true, return: updated, shopify_refund: refund });
   } catch(e) {
     await pool.query('UPDATE returns SET refund_status=$1 WHERE id=$2', ['failed', req.params.id]).catch(()=>{});
-    res.status(400).json({ error: e.message });
+    console.log('Refund error:', e.message);
+    res.status(400).json({ error: 'Refund processing failed. Please check Shopify and try again.' });
   }
 });
 
@@ -1344,7 +1376,7 @@ app.get('/api/analytics/orders', requireShopAccess, async (req, res) => {
 });
 
 // Return Analytics by location and product
-app.get('/api/analytics/returns-deep', async (req, res) => {
+app.get('/api/analytics/returns-deep', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1386,16 +1418,25 @@ app.get('/api/analytics/returns-deep', async (req, res) => {
     const pincodeData = Object.entries(byPincode).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([pincode, count]) => ({ pincode, count }));
 
     res.json({ by_product: productData, by_city: cityData, by_pincode: pincodeData });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('returns-deep error:', e.message); res.status(500).json({ error: 'Failed to load deep analytics' }); }
 });
 
 // Export CSV
 app.get('/api/returns/export', async (req, res) => {
-  const { shop } = req.query;
-  // CSV download is triggered via window.open(), which can't attach an auth header, so this
-  // can't use requireShopAccess like the other returns routes. At minimum, never allow exporting
-  // every merchant's customer PII (name/email/phone) at once by omitting shop.
+  const { shop, token } = req.query;
+  // CSV download via window.open() cannot send auth headers, so we accept a short-lived
+  // export token passed as a query param instead. Token must match the merchant's session_token
+  // in the DB to prevent any unauthenticated access to customer PII.
   if (!shop) return res.status(400).json({ error: 'shop required' });
+  if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop)) return res.status(400).json({ error: 'Invalid shop domain' });
+  if (!token) return res.status(401).json({ error: 'Export token required' });
+  const adminCheck = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
+  const memberCheck = adminCheck.rows.length === 0
+    ? await pool.query('SELECT * FROM team_members WHERE session_token=$1 AND shop_domain=$2', [token, shop])
+    : { rows: [] };
+  if (adminCheck.rows.length === 0 && memberCheck.rows.length === 0) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   let query = 'SELECT id,order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,status,type,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns WHERE shop_domain=$1';
   const params = [shop];
   query += ' ORDER BY created_at DESC';
@@ -1518,6 +1559,44 @@ app.post('/api/returns', async (req, res) => {
   const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant, images, line_items } = req.body;
   if (!shop_domain || !order_id || !customer_email || !reason) return res.status(400).json({ error: 'shop_domain, order_id, customer_email and reason are required' });
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop_domain)) return res.status(400).json({ error: 'Invalid shop domain' });
+
+  // Verify order ownership and enforce return window via Shopify API
+  try {
+    const sr = await getStoreToken(shop_domain);
+    if (sr.rows.length > 0) {
+      const orderResp = await fetch(`https://${shop_domain}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number || order_id)}&status=any`, {
+        headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+      });
+      if (orderResp.ok) {
+        const orderData = await orderResp.json();
+        const order = (orderData.orders || [])[0];
+        if (order) {
+          // Order ownership check — email must match
+          if (order.email && order.email.toLowerCase() !== customer_email.toLowerCase()) {
+            return res.status(403).json({ error: 'Email does not match this order' });
+          }
+          // Return window check
+          const storeRow = await pool.query('SELECT return_window, exchange_window FROM shopify_stores WHERE shop_domain=$1', [shop_domain]);
+          const window = type === 'exchange'
+            ? (storeRow.rows[0]?.exchange_window ?? 14)
+            : (storeRow.rows[0]?.return_window ?? 14);
+          const orderAge = (Date.now() - new Date(order.created_at).getTime()) / (1000 * 60 * 60 * 24);
+          if (orderAge > window) {
+            return res.status(400).json({ error: `Return window of ${window} days has passed for this order` });
+          }
+          // Amount validation — cap at actual order total to prevent manipulation
+          const orderTotal = parseFloat(order.total_price || 0);
+          if (amount && parseFloat(amount) > orderTotal) {
+            return res.status(400).json({ error: 'Refund amount cannot exceed order total' });
+          }
+        }
+      }
+    }
+  } catch(verifyErr) {
+    console.log('Order verify warning:', verifyErr.message);
+    // Non-blocking — if Shopify is unreachable, allow submit but log it
+  }
+
   const r = await pool.query(
     `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
@@ -1611,7 +1690,7 @@ app.post('/api/shiprocket/connect', requireShopAccess, async (req, res) => {
     if (!d.token) return res.status(400).json({ error: 'Invalid Shiprocket credentials' });
     await pool.query(
       'UPDATE shopify_stores SET shiprocket_email=$1, shiprocket_password=$2, shiprocket_token=$3, shiprocket_connected=true WHERE shop_domain=$4',
-      [email, password, d.token, shop]
+      [email, encryptCredential(password), d.token, shop]
     );
     res.json({ ok: true, message: 'Shiprocket connected successfully!' });
   } catch(e) { console.log('shiprocket connect error:', e.message); res.status(500).json({ error: 'Failed to connect Shiprocket' }); }
@@ -1666,7 +1745,7 @@ async function getSellerShiprocketToken(shop) {
     const resp = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: r.rows[0].shiprocket_email, password: r.rows[0].shiprocket_password })
+      body: JSON.stringify({ email: r.rows[0].shiprocket_email, password: decryptCredential(r.rows[0].shiprocket_password) })
     });
     const d = await resp.json();
     token = d.token;
@@ -2046,6 +2125,11 @@ app.get('/api/analytics/pincode-risk', requireShopAccess, async (req, res) => {
 app.post('/api/upload-image', requireShopAccess, async (req, res) => {
   const { shop, image_data, filename } = req.body;
   if (!shop || !image_data) return res.status(400).json({ error: 'shop and image_data required' });
+  // MIME type validation — only allow safe image formats, block SVG/HTML/scripts
+  const allowedMimePrefix = ['data:image/jpeg', 'data:image/png', 'data:image/webp', 'data:image/gif'];
+  if (image_data.startsWith('data:') && !allowedMimePrefix.some(p => image_data.startsWith(p))) {
+    return res.status(400).json({ error: 'Only JPEG, PNG, WebP and GIF images are allowed' });
+  }
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
   try {
