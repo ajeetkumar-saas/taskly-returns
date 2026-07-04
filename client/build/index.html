@@ -1256,13 +1256,17 @@ if(params.get('connected'))showAlert('Store connected!','success');
 // Initialize Shopify context for embedded app mode
 async function initEmbeddedApp() {
   const urlShop = new URLSearchParams(location.search).get('shop');
-  if(urlShop) return; // Already have shop in URL
+  if(urlShop) {
+    currentShop = urlShop; // Set currentShop from URL
+    return;
+  }
 
   // Extract shop from Shopify admin URL: /store/SHOPNAME/apps/ or /store/SHOPNAME
   const pathMatch = location.pathname.match(/\/store\/([^\/]+)/);
   if(pathMatch && pathMatch[1]) {
     const shop = pathMatch[1]; // e.g., "taskly-test-store"
     const normalized = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
+    currentShop = normalized; // Set it before redirect
     // Redirect to add shop parameter
     const newUrl = window.location.href.split('?')[0] + '?shop=' + encodeURIComponent(normalized);
     window.location.href = newUrl;
@@ -1275,7 +1279,7 @@ async function initEmbeddedApp() {
   console.log('[GoReturn] Starting initialization...');
   try {
     await initEmbeddedApp();
-    console.log('[GoReturn] Embedded app init complete, loading stores...');
+    console.log('[GoReturn] Embedded app init complete, currentShop:', currentShop);
   } catch(e) {
     console.error('[GoReturn] Init error:', e);
   }
