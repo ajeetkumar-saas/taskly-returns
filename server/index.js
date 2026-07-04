@@ -1560,10 +1560,11 @@ app.post('/api/returns', async (req, res) => {
   if (!shop_domain || !order_id || !customer_email || !reason) return res.status(400).json({ error: 'shop_domain, order_id, customer_email and reason are required' });
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop_domain)) return res.status(400).json({ error: 'Invalid shop domain' });
 
-  // Verify order ownership and enforce return window via Shopify API
+  // Verify order ownership and enforce return window via Shopify API (soft checks — blocking only on clear violations)
+  let shopifyVerified = false;
   try {
     const sr = await getStoreToken(shop_domain);
-    if (sr.rows.length > 0) {
+    if (sr?.rows?.length > 0) {
       const orderResp = await fetch(`https://${shop_domain}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number || order_id)}&status=any`, {
         headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
       });
@@ -1571,11 +1572,12 @@ app.post('/api/returns', async (req, res) => {
         const orderData = await orderResp.json();
         const order = (orderData.orders || [])[0];
         if (order) {
-          // Order ownership check — email must match
+          shopifyVerified = true;
+          // Order ownership check — email must match (only if Shopify fetch succeeded)
           if (order.email && order.email.toLowerCase() !== customer_email.toLowerCase()) {
             return res.status(403).json({ error: 'Email does not match this order' });
           }
-          // Return window check
+          // Return window check (only if Shopify fetch succeeded)
           const storeRow = await pool.query('SELECT return_window, exchange_window FROM shopify_stores WHERE shop_domain=$1', [shop_domain]);
           const window = type === 'exchange'
             ? (storeRow.rows[0]?.exchange_window ?? 14)
@@ -1584,7 +1586,7 @@ app.post('/api/returns', async (req, res) => {
           if (orderAge > window) {
             return res.status(400).json({ error: `Return window of ${window} days has passed for this order` });
           }
-          // Amount validation — cap at actual order total to prevent manipulation
+          // Amount validation — cap at actual order total (only if Shopify fetch succeeded)
           const orderTotal = parseFloat(order.total_price || 0);
           if (amount && parseFloat(amount) > orderTotal) {
             return res.status(400).json({ error: 'Refund amount cannot exceed order total' });
@@ -1593,9 +1595,9 @@ app.post('/api/returns', async (req, res) => {
       }
     }
   } catch(verifyErr) {
-    console.log('Order verify warning:', verifyErr.message);
-    // Non-blocking — if Shopify is unreachable, allow submit but log it
+    console.log('Order verify warning (non-blocking):', verifyErr.message);
   }
+  // If Shopify verification failed/unavailable, still allow submit so portal doesn't break (merchant approval is final gate)
 
   const r = await pool.query(
     `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
