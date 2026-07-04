@@ -1159,12 +1159,28 @@ app.get('/api/shopify/stores', async (req, res, next) => {
 });
 
 // Orders from Shopify
-app.get('/api/shopify/orders', requireShopAccess, async (req, res) => {
+app.get('/api/shopify/orders', async (req, res) => {
   const { shop, all } = req.query;
 
+  // For 'all' requests, handle auth separately
   if (all === 'true') {
-    // Fetch orders from ALL stores for this account
-    const owner_id = req.user_id || 'default';
+    // Check authentication
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    let owner_id = null;
+
+    if (!token) {
+      const cookies = req.headers.cookie || '';
+      const authMatch = cookies.match(/auth_token=([^;]+)/);
+      const authToken = authMatch ? authMatch[1] : null;
+      if (!authToken) return res.status(401).json({ error: 'Unauthorized' });
+      const ar = await db.query('SELECT owner_id FROM sessions WHERE token=$1', [authToken]);
+      if (!ar.rows.length) return res.status(401).json({ error: 'Session expired' });
+      owner_id = ar.rows[0].owner_id;
+    } else {
+      owner_id = 'default'; // Bearer tokens are from embedded app
+    }
+
     try {
       const sr = await db.query('SELECT shop_domain, access_token FROM stores WHERE owner_id=$1 AND access_token IS NOT NULL', [owner_id]);
       if (!sr.rows.length) return res.json([]);
@@ -1191,26 +1207,29 @@ app.get('/api/shopify/orders', requireShopAccess, async (req, res) => {
     }
   }
 
-  if (!shop) return res.status(400).json({ error: 'shop required' });
-  const sr = await getStoreToken(shop);
-  if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. Open GoReturn in Shopify Admin first.' });
-  try {
-    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
-      headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
-    });
-    if (r.status === 401 || r.status === 403) {
-      const reauth = await attemptReauth(shop);
-      if (reauth) {
-        const retry = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
-          headers: { 'X-Shopify-Access-Token': reauth }
-        });
-        if (retry.ok) { const rd = await retry.json(); return res.json(rd.orders || []); }
+  // For single shop requests, use requireShopAccess middleware
+  requireShopAccess(req, res, async () => {
+    if (!shop) return res.status(400).json({ error: 'shop required' });
+    const sr = await getStoreToken(shop);
+    if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. Open GoReturn in Shopify Admin first.' });
+    try {
+      const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
+        headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+      });
+      if (r.status === 401 || r.status === 403) {
+        const reauth = await attemptReauth(shop);
+        if (reauth) {
+          const retry = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
+            headers: { 'X-Shopify-Access-Token': reauth }
+          });
+          if (retry.ok) { const rd = await retry.json(); return res.json(rd.orders || []); }
+        }
+        return res.status(503).json({ error: 'Store connection expired. Open GoReturn in Shopify Admin to reconnect.' });
       }
-      return res.status(503).json({ error: 'Store connection expired. Open GoReturn in Shopify Admin to reconnect.' });
-    }
-    const d = await r.json();
-    res.json(d.orders || []);
-  } catch(e) { console.log('orders fetch error:', e.message); res.status(500).json({ error: 'Failed to fetch orders' }); }
+      const d = await r.json();
+      res.json(d.orders || []);
+    } catch(e) { console.log('orders fetch error:', e.message); res.status(500).json({ error: 'Failed to fetch orders' }); }
+  });
 });
 
 // Single order lookup (for customer return portal)
