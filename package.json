@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Shopify Return & Exchange app for Indian D2C brands",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test": "node --test test/"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
