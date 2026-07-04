@@ -1292,7 +1292,7 @@ function getFeatureList(store){
 ✓ Fraud Detection
 ✓ Promotions',pro:'✓ All features'};return (planFeatures[store.plan]||'').replace(/
 /g,'<br>');
-}function getFeatureList(store){if(store.plan==='custom'){try{const f=JSON.parse(store.custom_features||'{}');const labels={exchanges:'Exchanges',analytics:'Analytics',export:'Export Data',locations:'Locations',notifications:'Notifications',logistics:'Logistics',automation:'Automation',promotions:'Promotions',fraud:'Fraud Detection',pincode:'Pincode Risk',webhooks:'Webhooks'};return Object.keys(labels).map(x=>(f[x]?'✓':'✗')+' '+labels[x]).join('<br>');}catch(e){return '';}}const plans={free:'Basic returns only',starter:'Exchanges, Analytics, Export, Logistics',growth:'Exchanges, Analytics, Export, Logistics, Automation, Fraud, Promotions',pro:'All features'};return plans[store.plan]||'';}
+}
 </script>
 </body>
 </html>
