@@ -110,6 +110,7 @@ setInterval(() => { const now = Date.now(); for (const [k, v] of rateBuckets) if
 app.use('/api/', rateLimit(180, 60 * 1000)); // generous default cap for all API traffic
 app.use('/api/returns', rateLimit(20, 60 * 1000)); // stricter cap on return submissions specifically
 app.use('/api/admin/login', rateLimit(10, 60 * 1000)); // brute-force protection on login
+app.use('/api/admin/verify-otp', rateLimit(10, 60 * 1000)); // prevent OTP brute force
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -380,6 +381,7 @@ async function requireShopAccess(req, res, next) {
       targetShop = r.rows[0].shop_domain;
     }
     if (!targetShop) return res.status(400).json({ error: 'shop required' });
+    if (!/^[a-z0-9-]+\.myshopify\.com$/.test(targetShop)) return res.status(400).json({ error: 'Invalid shop domain' });
 
     const authHeader = req.headers['authorization'] || '';
     if (authHeader.startsWith('Bearer ')) {
@@ -429,7 +431,8 @@ app.post('/api/admin/register', async (req, res) => {
     );
     res.json({ ok: true, user: r.rows[0], token });
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    console.log('Admin register error:', e.message);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
@@ -611,15 +614,19 @@ app.post('/api/team', authenticateRequest, async (req, res) => {
     res.json({ ...r.rows[0], emailed, invite_link: inviteLink });
   } catch(e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Member with this email already exists' });
-    res.status(500).json({ error: e.message });
+    console.log('Team invite error:', e.message);
+    res.status(500).json({ error: 'Failed to send invite' });
   }
 });
 
-// Validate invite token (for set-password page)
+// Validate invite token (for set-password page) — expires 7 days after creation
 app.get('/api/team/invite/:token', async (req, res) => {
-  const r = await pool.query('SELECT name, email, role FROM team_members WHERE invite_token=$1 AND invite_token != $2', [req.params.token, '']);
+  const r = await pool.query('SELECT name, email, role, created_at FROM team_members WHERE invite_token=$1 AND invite_token != $2', [req.params.token, '']);
   if (!r.rows.length) return res.status(404).json({ error: 'Invalid or expired invite link' });
-  res.json(r.rows[0]);
+  const ageDays = (Date.now() - new Date(r.rows[0].created_at).getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays > 7) return res.status(410).json({ error: 'Invite link has expired. Ask the admin to resend the invite.' });
+  const { created_at: _, ...safe } = r.rows[0];
+  res.json(safe);
 });
 
 // Invited member sets their own password
@@ -627,8 +634,10 @@ app.post('/api/team/set-password', async (req, res) => {
   const { token, password } = req.body;
   if (!token || !password) return res.status(400).json({ error: 'token and password required' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  const r = await pool.query('SELECT id, email FROM team_members WHERE invite_token=$1 AND invite_token != $2', [token, '']);
+  const r = await pool.query('SELECT id, email, created_at FROM team_members WHERE invite_token=$1 AND invite_token != $2', [token, '']);
   if (!r.rows.length) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  const ageDays = (Date.now() - new Date(r.rows[0].created_at).getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays > 7) return res.status(410).json({ error: 'Invite link has expired. Ask the admin to resend the invite.' });
   await pool.query('UPDATE team_members SET password_hash=$1, status=$2, invite_token=$3 WHERE id=$4',
     [hashPassword(password), 'active', '', r.rows[0].id]);
   res.json({ ok: true, email: r.rows[0].email });
@@ -1003,7 +1012,7 @@ app.get('/api/shopify/stores', async (req, res) => {
 });
 
 // Orders from Shopify
-app.get('/api/shopify/orders', async (req, res) => {
+app.get('/api/shopify/orders', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1030,7 +1039,7 @@ app.get('/api/shopify/orders', async (req, res) => {
 // Single order lookup (for customer return portal)
 app.get('/api/shopify/order-lookup', async (req, res) => {
   const { shop, order_number, email } = req.query;
-  if (!shop || !order_number) return res.status(400).json({ error: 'shop and order_number required' });
+  if (!shop || !order_number || !email) return res.status(400).json({ error: 'shop, order_number and email required' });
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. The store owner needs to open GoReturn app in Shopify Admin first.' });
   try {
@@ -1224,7 +1233,7 @@ app.get('/api/returns', (req, res, next) => {
   res.json(r.rows);
 });
 
-app.get('/api/returns/stats', async (req, res) => {
+app.get('/api/returns/stats', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   let w = shop ? ' WHERE shop_domain=$1' : '';
   const p = shop ? [shop] : [];
@@ -1250,7 +1259,7 @@ app.get('/api/returns/stats', async (req, res) => {
 });
 
 // Analytics with date range
-app.get('/api/analytics', async (req, res) => {
+app.get('/api/analytics', requireShopAccess, async (req, res) => {
   const { shop, days } = req.query;
   const d = parseInt(days) || 30;
   const p = shop ? [shop] : [];
@@ -1421,7 +1430,7 @@ app.get('/api/portal-settings', async (req, res) => {
 });
 
 // Save portal customization
-app.post('/api/portal-settings', async (req, res) => {
+app.post('/api/portal-settings', requireShopAccess, async (req, res) => {
   const { shop, heading, subheading, logo_url, exchange_enabled } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -1434,10 +1443,10 @@ app.post('/api/portal-settings', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5) ON CONFLICT (shop_domain) DO UPDATE SET portal_heading=$2, portal_subheading=$3, portal_logo=$4, exchange_enabled=$5`,
       [shop, heading||'Return & Exchange Portal', subheading||'Submit your return request in 3 easy steps', logo_url||'', exchange_enabled!==false]);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('portal-settings error:', e.message); res.status(500).json({ error: 'Failed to save portal settings' }); }
 });
 
-app.get('/api/settings', async (req, res) => {
+app.get('/api/settings', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const store = await pool.query('SELECT portal_color,portal_banner,return_window,exchange_window,auto_approve_under,notify_email FROM shopify_stores WHERE shop_domain=$1', [shop]);
@@ -1445,7 +1454,7 @@ app.get('/api/settings', async (req, res) => {
   res.json({ store: store.rows[0] || {}, settings: settings.rows[0] || {} });
 });
 
-app.post('/api/settings', async (req, res) => {
+app.post('/api/settings', requireShopAccess, async (req, res) => {
   const { shop, portal_color, return_window, exchange_window, auto_approve_under, notify_email, return_reasons, exchange_reasons, refund_methods, auto_approve_enabled } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET portal_color=$1, return_window=$2, exchange_window=$3, auto_approve_under=$4, notify_email=$5 WHERE shop_domain=$6',
@@ -1480,13 +1489,13 @@ async function getEmailTemplates(shop) {
 function fillPlaceholders(str, data) {
   return (str||'').replace(/\{order\}/g, data.order||'').replace(/\{name\}/g, data.name||'').replace(/\{amount\}/g, data.amount||'0').replace(/\{product\}/g, data.product||'');
 }
-app.get('/api/email-templates', async (req, res) => {
+app.get('/api/email-templates', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.json({ templates: DEFAULT_EMAIL_TEMPLATES, defaults: DEFAULT_EMAIL_TEMPLATES });
   const templates = await getEmailTemplates(shop);
   res.json({ templates, defaults: DEFAULT_EMAIL_TEMPLATES });
 });
-app.post('/api/email-templates', async (req, res) => {
+app.post('/api/email-templates', requireShopAccess, async (req, res) => {
   const { shop, templates } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -1497,12 +1506,14 @@ app.post('/api/email-templates', async (req, res) => {
       [shop, JSON.stringify(templates||{})]);
     logActivity(req, 'Email Templates Updated', `Store ${shop}`);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('email-templates save error:', e.message); res.status(500).json({ error: 'Failed to save email templates' }); }
 });
 
 // Create return/exchange
 app.post('/api/returns', async (req, res) => {
   const { order_id, order_number, customer_name, customer_email, customer_phone, product_name, product_sku, quantity, reason, reason_detail, refund_method, amount, shop_domain, type, exchange_product, exchange_variant, images, line_items } = req.body;
+  if (!shop_domain || !order_id || !customer_email || !reason) return res.status(400).json({ error: 'shop_domain, order_id, customer_email and reason are required' });
+  if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop_domain)) return res.status(400).json({ error: 'Invalid shop domain' });
   const r = await pool.query(
     `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
@@ -1571,15 +1582,19 @@ app.patch('/api/returns/:id', requireShopAccess, async (req, res) => {
   res.json(ret);
 });
 
-// Customer return tracking
+// Customer return tracking — email required to prevent IDOR enumeration
 app.get('/api/returns/track/:id', async (req, res) => {
-  const r = await pool.query('SELECT id,order_id,order_number,customer_name,product_name,reason,status,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns WHERE id=$1', [req.params.id]);
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email required to track return' });
+  const r = await pool.query('SELECT id,order_id,order_number,customer_name,customer_email,product_name,reason,status,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns WHERE id=$1', [req.params.id]);
   if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
-  res.json(r.rows[0]);
+  if (r.rows[0].customer_email && r.rows[0].customer_email.toLowerCase() !== email.toLowerCase()) return res.status(403).json({ error: 'Email does not match this return' });
+  const { customer_email: _, ...safe } = r.rows[0];
+  res.json(safe);
 });
 
 // Shiprocket Connect (per seller)
-app.post('/api/shiprocket/connect', async (req, res) => {
+app.post('/api/shiprocket/connect', requireShopAccess, async (req, res) => {
   const { shop, email, password } = req.body;
   if (!shop || !email || !password) return res.status(400).json({ error: 'shop, email, password required' });
   try {
@@ -1595,10 +1610,10 @@ app.post('/api/shiprocket/connect', async (req, res) => {
       [email, password, d.token, shop]
     );
     res.json({ ok: true, message: 'Shiprocket connected successfully!' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('shiprocket connect error:', e.message); res.status(500).json({ error: 'Failed to connect Shiprocket' }); }
 });
 
-app.post('/api/shiprocket/disconnect', async (req, res) => {
+app.post('/api/shiprocket/disconnect', requireShopAccess, async (req, res) => {
   const { shop } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query(
@@ -1608,7 +1623,7 @@ app.post('/api/shiprocket/disconnect', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/shiprocket/status', async (req, res) => {
+app.get('/api/shiprocket/status', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const r = await pool.query('SELECT shiprocket_connected, shiprocket_email, shiprocket_auto_pickup, shiprocket_pickup_location FROM shopify_stores WHERE shop_domain=$1', [shop]);
@@ -1950,7 +1965,7 @@ app.patch('/api/admin/offers/:id', requireOwner, async (req, res) => {
   res.json(r.rows[0]);
 });
 
-app.post('/api/offers/redeem', async (req, res) => {
+app.post('/api/offers/redeem', requireShopAccess, async (req, res) => {
   const { code, shop } = req.body;
   if (!code || !shop) return res.status(400).json({ error: 'code and shop required' });
   try {
@@ -1965,7 +1980,7 @@ app.post('/api/offers/redeem', async (req, res) => {
     await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [newPlan, shop]);
     await pool.query('UPDATE offers SET used=used+1 WHERE id=$1', [offer.id]);
     res.json({ ok: true, message: `Offer "${code}" applied! Plan: ${newPlan}`, plan: newPlan });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('offers redeem error:', e.message); res.status(500).json({ error: 'Failed to apply offer' }); }
 });
 
 // Customer fraud score
@@ -2024,7 +2039,7 @@ app.get('/api/analytics/pincode-risk', async (req, res) => {
 });
 
 // Image upload via Shopify Files API
-app.post('/api/upload-image', async (req, res) => {
+app.post('/api/upload-image', requireShopAccess, async (req, res) => {
   const { shop, image_data, filename } = req.body;
   if (!shop || !image_data) return res.status(400).json({ error: 'shop and image_data required' });
   const sr = await getStoreToken(shop);
@@ -2167,7 +2182,7 @@ app.delete('/api/webhooks/:id', async (req, res) => {
 });
 
 // Mark order as returned on Shopify (tags)
-app.post('/api/shopify/tag-order', async (req, res) => {
+app.post('/api/shopify/tag-order', requireShopAccess, async (req, res) => {
   const { shop, order_id, tags } = req.body;
   if (!shop || !order_id) return res.status(400).json({ error: 'shop and order_id required' });
   const sr = await getStoreToken(shop);
