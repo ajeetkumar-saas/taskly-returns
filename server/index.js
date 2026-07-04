@@ -143,12 +143,17 @@ app.use(cors({
   },
   credentials: false
 }));
-// Allow embedding inside Shopify Admin iframe (required for App Bridge)
+// Allow embedding inside Shopify Admin iframe (required for App Bridge). The ?shop= value must
+// be validated before going into the CSP header — passing it through unchecked would let anyone
+// set frame-ancestors to their own origin via ?shop=attacker.com, defeating clickjacking
+// protection entirely for that response.
 app.use((req, res, next) => {
   const shop = req.query.shop;
-  const allowShop = shop ? `https://${shop}` : 'https://*.myshopify.com';
+  const isValidShop = typeof shop === 'string' && /^[a-z0-9-]+\.myshopify\.com$/.test(shop);
+  const allowShop = isValidShop ? `https://${shop}` : 'https://*.myshopify.com';
   res.setHeader('Content-Security-Policy', `frame-ancestors ${allowShop} https://admin.shopify.com;`);
   res.removeHeader('X-Frame-Options');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   next();
 });
 app.use(express.json({
@@ -171,12 +176,29 @@ function rateLimit(maxRequests, windowMs) {
     next();
   };
 }
+// Per-shop variant: keyed by shop_domain (not caller IP), so one shop can't be spammed from
+// many/rotating IPs and one attacker can't exhaust a shared IP's budget across unrelated shops.
+function rateLimitByShop(maxRequests, windowMs) {
+  return (req, res, next) => {
+    const shop = req.query.shop || req.body?.shop_domain || req.body?.shop || 'unknown';
+    const key = 'shop:' + shop + ':' + req.path;
+    const now = Date.now();
+    let bucket = rateBuckets.get(key);
+    if (!bucket || now - bucket.start > windowMs) { bucket = { count: 0, start: now }; rateBuckets.set(key, bucket); }
+    bucket.count++;
+    if (bucket.count > maxRequests) return res.status(429).json({ error: 'Too many requests for this store, please slow down and try again shortly.' });
+    next();
+  };
+}
 setInterval(() => { const now = Date.now(); for (const [k, v] of rateBuckets) if (now - v.start > 10 * 60 * 1000) rateBuckets.delete(k); }, 5 * 60 * 1000);
 app.use('/api/', rateLimit(180, 60 * 1000)); // generous default cap for all API traffic
 app.use('/api/returns', rateLimit(20, 60 * 1000)); // stricter cap on return submissions specifically
+app.use('/api/returns', rateLimitByShop(40, 60 * 1000)); // per-shop cap in addition to per-IP, since a public/anonymous storefront endpoint could otherwise be spammed for one shop from many rotating IPs
 app.use('/api/admin/login', rateLimit(10, 60 * 1000)); // brute-force protection on login
 app.use('/api/admin/verify-otp', rateLimit(10, 60 * 1000)); // prevent OTP brute force
 app.use('/api/shiprocket', rateLimit(15, 60 * 1000)); // prevent courier API quota burn
+app.use('/api/shiprocket', rateLimitByShop(30, 60 * 1000)); // per-shop cap — Shiprocket bills per API call, so this is the actual Denial-of-Wallet guard
+app.use('/api/logistics', rateLimitByShop(30, 60 * 1000)); // same Denial-of-Wallet concern for other courier providers
 app.use('/api/logistics', rateLimit(15, 60 * 1000)); // prevent courier API quota burn
 
 const pool = new Pool({
@@ -1288,7 +1310,11 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
           const retryOrders = retryData.orders || [];
           if (!retryOrders.length) return res.status(404).json({ error: 'Order not found' });
           const order = retryOrders[0];
-          if (email && order.email && order.email.toLowerCase() !== email.toLowerCase()) {
+          // Reject if the order has no email on file — we can't verify identity, so we must
+          // NOT let any email value pass through unchecked (that was the bug: it silently
+          // skipped verification instead of failing closed).
+          if (!order.email) return res.status(403).json({ error: 'Cannot verify this order — no email on file. Contact the store owner.' });
+          if (order.email.toLowerCase() !== email.toLowerCase()) {
             return res.status(403).json({ error: 'Email does not match order' });
           }
           return res.json({
@@ -1307,7 +1333,8 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
     const orders = d.orders || [];
     if (!orders.length) return res.status(404).json({ error: 'Order not found' });
     const order = orders[0];
-    if (email && order.email && order.email.toLowerCase() !== email.toLowerCase()) {
+    if (!order.email) return res.status(403).json({ error: 'Cannot verify this order — no email on file. Contact the store owner.' });
+    if (order.email.toLowerCase() !== email.toLowerCase()) {
       return res.status(403).json({ error: 'Email does not match order' });
     }
     res.json({
@@ -1674,9 +1701,13 @@ app.get('/api/returns/export', async (req, res) => {
   query += ' ORDER BY created_at DESC';
   const r = await pool.query(query, params);
 
-  // RFC 4180 CSV escaping: double quotes inside quoted fields, wrap in quotes if contains quotes/commas
+  // RFC 4180 CSV escaping: double quotes inside quoted fields, wrap in quotes if contains quotes/commas.
+  // Also guards against CSV formula injection: customer-supplied fields like customer_name go
+  // straight into this export, and Excel/Sheets will execute a leading =, +, -, or @ as a formula
+  // when the file is opened — prefixing with a tab neutralizes that without changing what's displayed.
   function csvEscape(val) {
-    const str = String(val || '');
+    let str = String(val || '');
+    if (/^[=+\-@]/.test(str)) str = '\t' + str;
     if (str.includes('"') || str.includes(',') || str.includes('\n')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
@@ -1830,8 +1861,10 @@ app.post('/api/returns', async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found on Shopify' });
 
     shopifyVerified = true;
-    // Order ownership check — email must match
-    if (order.email && order.email.toLowerCase() !== customer_email.toLowerCase()) {
+    // Order ownership check — email must match. Fail closed if Shopify has no email on file
+    // for this order (POS/phone checkout) since there's nothing to verify identity against.
+    if (!order.email) return res.status(403).json({ error: 'Cannot verify this order — no email on file. Contact the store owner.' });
+    if (order.email.toLowerCase() !== customer_email.toLowerCase()) {
       return res.status(403).json({ error: 'Email does not match this order' });
     }
     // Return window check
