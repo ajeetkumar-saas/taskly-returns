@@ -1269,6 +1269,9 @@ function setPortalLinks() {
   try { await initEmbeddedApp(); } catch(e) { console.error('[GoReturn] Init error:', e); }
   try { setPortalLinks(); } catch(e) { console.log('Portal link error:', e); }
   checkDashboardAuth();
+  const hasToken=localStorage.getItem('goreturn_token');
+  const inShopify=window.shopify||location.hostname.includes('shopify.com');
+  if(!hasToken&&!inShopify){location.href='/login.html';return;}
   loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Load error:',e));
 })();
 
