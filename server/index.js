@@ -469,11 +469,14 @@ function verifyPassword(password, storedHash) {
 
 async function authenticateRequest(req, res, next) {
   const token = req.headers['x-auth-token'];
-  if (!token) return res.status(401).json({ error: 'Login required' });
+  if (!token) return res.status(401).json({ error: 'Login required' }); // no token at all is routine (not-yet-logged-in UI checks) — not worth logging
   const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
   if (admin.rows.length > 0) { req.user = admin.rows[0]; return next(); }
   const member = await pool.query('SELECT * FROM team_members WHERE session_token=$1', [token]);
   if (member.rows.length > 0) { req.user = member.rows[0]; return next(); }
+  // A token WAS supplied but matched no active session — more suspicious than simply being
+  // logged out (expired/tampered/guessed token), worth a trace.
+  await logActivity(req, 'Invalid Session Token', `${req.method} ${req.path}`);
   return res.status(401).json({ error: 'Invalid session' });
 }
 
@@ -621,6 +624,13 @@ async function requireShopAccess(req, res, next) {
       if (member.rows.length > 0 && member.rows[0].shop_domain === targetShop) { req.user = member.rows[0]; req.verifiedShop = targetShop; return next(); }
     }
 
+    // Only log when a credential was actually presented but failed verification (a real
+    // mismatched/forged Bearer token, or a session token for the wrong shop) — not the routine
+    // "no auth header yet" case that happens on normal early page loads, which would otherwise
+    // flood this log with noise on every request.
+    if (authHeader.startsWith('Bearer ') || req.headers['x-auth-token']) {
+      await logActivity(req, 'Unauthorized Shop Access Attempt', `${req.method} ${req.path} → shop=${targetShop}`);
+    }
     return res.status(401).json({ error: 'Not authorized for this store' });
   } catch(e) { return res.status(500).json({ error: 'Auth check failed' }); }
 }
@@ -691,9 +701,9 @@ app.post('/api/admin/login', async (req, res) => {
     const member = await pool.query('SELECT * FROM team_members WHERE email=$1', [email]);
     if (member.rows.length > 0) { user = member.rows[0]; userType = 'member'; }
   }
-  if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+  if (!user) { await logActivity(req, 'Login Failed', `Unknown email: ${email}`); return res.status(401).json({ error: 'Invalid email or password' }); }
   const check = verifyPassword(password, user.password_hash);
-  if (!check.ok) return res.status(401).json({ error: 'Invalid email or password' });
+  if (!check.ok) { await logActivity(req, 'Login Failed', `Wrong password: ${email}`); return res.status(401).json({ error: 'Invalid email or password' }); }
   if (check.upgradedHash) {
     const table = userType === 'admin' ? 'admin_users' : 'team_members';
     pool.query(`UPDATE ${table} SET password_hash=$1 WHERE id=$2`, [check.upgradedHash, user.id]).catch(()=>{});
@@ -710,9 +720,9 @@ app.post('/api/admin/verify-otp', async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
   const stored = otpStore[email];
-  if (!stored) return res.status(400).json({ error: 'No OTP found. Please login again.' });
-  if (Date.now() > stored.expires) { delete otpStore[email]; return res.status(400).json({ error: 'OTP expired. Please login again.' }); }
-  if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP. Please try again.' });
+  if (!stored) { await logActivity(req, 'OTP Verify Failed', `No OTP on file: ${email}`); return res.status(400).json({ error: 'No OTP found. Please login again.' }); }
+  if (Date.now() > stored.expires) { delete otpStore[email]; await logActivity(req, 'OTP Verify Failed', `Expired: ${email}`); return res.status(400).json({ error: 'OTP expired. Please login again.' }); }
+  if (stored.otp !== otp) { await logActivity(req, 'OTP Verify Failed', `Wrong code: ${email}`); return res.status(400).json({ error: 'Invalid OTP. Please try again.' }); }
   delete otpStore[email];
   const token = crypto.randomBytes(32).toString('hex');
   if (stored.userType === 'admin') {
