@@ -258,6 +258,11 @@ async function initDB() {
 await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_price NUMERIC(10,2) DEFAULT NULL`).catch(e=>console.log('add custom_price:',e.message));
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_returns_limit INTEGER DEFAULT NULL`).catch(e=>console.log('add custom_returns_limit:',e.message));
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_features JSONB DEFAULT NULL`).catch(e=>console.log('add custom_features:',e.message));
+  // Persists the Shopify recurring_application_charge id so we can later re-check its live
+  // status (cancelled/declined/expired) — previously charge_id was only used transiently during
+  // /api/billing/confirm and never stored, so there was no way to detect billing changes after
+  // the fact.
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS billing_charge_id VARCHAR(255) DEFAULT NULL`).catch(e=>console.log('add billing_charge_id:',e.message));
     await pool.query(`
     CREATE TABLE IF NOT EXISTS returns (
       id SERIAL PRIMARY KEY,
@@ -1198,7 +1203,9 @@ app.get('/api/billing/confirm', async (req, res) => {
       const verifiedPlanKey = Object.keys(PLANS).find(k => PLANS[k].price === chargePrice) || 'starter';
       const planData = PLANS[verifiedPlanKey];
       const trialEndsAt = planData.trial_days > 0 ? new Date(Date.now() + planData.trial_days * 86400000) : null;
-      await pool.query('UPDATE shopify_stores SET plan=$1, trial_ends_at=$2 WHERE shop_domain=$3', [verifiedPlanKey, trialEndsAt, shop]);
+      // Store the charge id so syncBillingStatus() can later re-check whether the merchant has
+      // cancelled/been declined on Shopify's side and downgrade accordingly.
+      await pool.query('UPDATE shopify_stores SET plan=$1, trial_ends_at=$2, billing_charge_id=$3 WHERE shop_domain=$4', [verifiedPlanKey, trialEndsAt, String(charge_id), shop]);
       return res.redirect(`/?shop=${shop}&connected=true&plan=${verifiedPlanKey}`);
     }
     res.redirect(`/?shop=${shop}&connected=true&plan=${plan}`);
@@ -2947,6 +2954,53 @@ async function runDataBackup(triggeredManually) {
   }
 }
 
+// Keeps our DB plan in sync with what's actually true on Shopify's side. The legacy REST
+// recurring_application_charges API has no webhook for cancellation/decline/expiry, so this is
+// a daily poll: any paid shop whose stored charge is no longer 'active' gets downgraded to free,
+// and any paid trial that has run out (with no real charge behind it) gets downgraded too.
+async function syncBillingStatus() {
+  const downgraded = [];
+  try {
+    const paidWithCharge = await pool.query(
+      `SELECT shop_domain, billing_charge_id, plan FROM shopify_stores WHERE plan != 'free' AND billing_charge_id IS NOT NULL`
+    );
+    for (const row of paidWithCharge.rows) {
+      try {
+        const token = await getValidToken(row.shop_domain);
+        if (!token) continue;
+        const r = await fetch(`https://${row.shop_domain}/admin/api/2025-04/recurring_application_charges/${row.billing_charge_id}.json`, {
+          headers: { 'X-Shopify-Access-Token': token }
+        });
+        const d = await r.json();
+        const status = d.recurring_application_charge?.status;
+        if (status && status !== 'active') {
+          await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', ['free', row.shop_domain]);
+          downgraded.push(`${row.shop_domain} (${row.plan}→free, charge status: ${status})`);
+        }
+      } catch(e) { console.log(`syncBillingStatus check failed for ${row.shop_domain}:`, e.message); }
+    }
+
+    // Trials that ran out with no real charge on file (merchant never actually paid) — these
+    // couldn't be caught above since there's no billing_charge_id to check against Shopify.
+    const expiredTrials = await pool.query(
+      `SELECT shop_domain, plan FROM shopify_stores WHERE plan != 'free' AND billing_charge_id IS NULL AND trial_ends_at IS NOT NULL AND trial_ends_at < NOW()`
+    );
+    for (const row of expiredTrials.rows) {
+      await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', ['free', row.shop_domain]);
+      downgraded.push(`${row.shop_domain} (${row.plan}→free, trial expired)`);
+    }
+
+    if (downgraded.length) {
+      console.log('syncBillingStatus: downgraded', downgraded);
+      await notifyAdmin('⚠️ GoReturn Plan Downgrades (Billing Sync)', `<p>The following stores were downgraded to Free after checking Shopify billing status / trial expiry:</p><ul>${downgraded.map(x => `<li>${x}</li>`).join('')}</ul>`);
+    }
+    return { ok: true, downgraded: downgraded.length };
+  } catch(e) {
+    console.log('syncBillingStatus error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 // Manual on-demand backup trigger (admin only)
 // Force register refunds/create webhook for all stores (admin only)
 app.post('/api/admin/register-webhooks', requireOwner, async (req, res) => {
@@ -2989,12 +3043,16 @@ initDB().then(() => {
   // Register refunds/create webhook for all existing stores (idempotent)
   setTimeout(async () => {
     try {
-      const stores = await pool.query('SELECT shop_domain, access_token FROM shopify_stores WHERE access_token IS NOT NULL');
+      const stores = await pool.query('SELECT shop_domain FROM shopify_stores');
       for (const row of stores.rows) {
         try {
+          // Same fix as /api/admin/register-webhooks: must decrypt via getValidToken(), not
+          // read the (possibly now-encrypted) access_token column directly.
+          const token = await getValidToken(row.shop_domain);
+          if (!token) { console.log(`Webhook reg skipped for ${row.shop_domain}: no valid token`); continue; }
           await fetch(`https://${row.shop_domain}/admin/api/2025-04/webhooks.json`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': row.access_token },
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
             body: JSON.stringify({ webhook: { topic: 'refunds/create', address: `${APP_URL}/api/webhooks/shopify/refunds-create`, format: 'json' } })
           });
           console.log(`Webhook registered for ${row.shop_domain}`);
@@ -3002,4 +3060,11 @@ initDB().then(() => {
       }
     } catch(e) { console.log('Bulk webhook registration error:', e.message); }
   }, 10 * 1000); // 10 seconds after boot
+
+  // Daily billing-status sync: catches subscription cancellation, payment decline/expiry, and
+  // trial expiry that Shopify has no webhook for on the legacy REST recurring-charges API — the
+  // DB `plan` column previously could only move "up" via /api/billing/confirm, never back down
+  // on its own if a merchant cancelled directly in Shopify or a trial simply ran out.
+  setTimeout(() => syncBillingStatus(), 3 * 60 * 1000); // 3 min after boot (after backup settles)
+  setInterval(() => syncBillingStatus(), 24 * 60 * 60 * 1000);
 });
