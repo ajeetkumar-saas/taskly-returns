@@ -1465,7 +1465,7 @@ app.get('/api/returns/stats', requireShopAccess, async (req, res) => {
 });
 
 // Analytics with date range
-app.get('/api/analytics', requirePlan('growth'), async (req, res) => {
+app.get('/api/analytics', requirePlan('starter'), async (req, res) => {
   const { shop, days } = req.query;
   const d = parseInt(days) || 30;
   const p = shop ? [shop] : [];
@@ -1483,7 +1483,7 @@ app.get('/api/analytics', requirePlan('growth'), async (req, res) => {
 });
 
 // Order Analytics — fetch all orders from Shopify and analyze
-app.get('/api/analytics/orders', requirePlan('growth'), async (req, res) => {
+app.get('/api/analytics/orders', requirePlan('starter'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1546,7 +1546,7 @@ app.get('/api/analytics/orders', requirePlan('growth'), async (req, res) => {
 });
 
 // Return Analytics by location and product
-app.get('/api/analytics/returns-deep', requirePlan('growth'), async (req, res) => {
+app.get('/api/analytics/returns-deep', requirePlan('starter'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1610,15 +1610,21 @@ app.get('/api/returns/export', async (req, res) => {
     return res.status(402).json({ error: `Export requires ${plan === 'free' ? 'Starter' : plan} plan. Please upgrade.` });
   }
 
-  // Validate token (owner can export any store, team members only own store + check role)
+  // Validate token (owner can export any store, team members only own store + check role,
+  // embedded seller via verified Shopify session token for the same shop)
   const adminCheck = await pool.query('SELECT role FROM admin_users WHERE session_token=$1', [token]);
   if (adminCheck.rows.length > 0 && adminCheck.rows[0].role === 'owner') {
     // Owner: proceed
   } else {
-    // Team member: must have admin role on the specific store
-    const memberCheck = await pool.query('SELECT role FROM team_members WHERE session_token=$1 AND shop_domain=$2 AND role=$3', [token, shop, 'admin']);
-    if (memberCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Unauthorized (admin or owner role required)' });
+    const shopifySession = verifyShopifySessionToken(token);
+    if (shopifySession && shopifySession.shop === shop) {
+      // Embedded app: Shopify-signed session token proves seller context for this shop
+    } else {
+      // Team member: must have admin role on the specific store
+      const memberCheck = await pool.query('SELECT role FROM team_members WHERE session_token=$1 AND shop_domain=$2 AND role=$3', [token, shop, 'admin']);
+      if (memberCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Unauthorized (admin or owner role required)' });
+      }
     }
   }
   let query = 'SELECT id,order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,status,type,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns WHERE shop_domain=$1';
