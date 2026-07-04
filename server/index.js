@@ -1376,7 +1376,15 @@ app.get('/api/returns', (req, res, next) => {
   const params = [];
   const conditions = [];
   let idx = 1;
-  if (shop && shop !== 'all') { conditions.push(`shop_domain=$${idx++}`); params.push(shop); }
+  if (shop && shop !== 'all') {
+    // Normalize shop domain to handle both 'taskly-test-store' and 'taskly-test-store.myshopify.com'
+    const normalizedShop = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
+    const baseShop = shop.replace('.myshopify.com', '');
+    conditions.push(`(shop_domain=$${idx} OR shop_domain=$${idx+1})`);
+    params.push(normalizedShop);
+    params.push(baseShop);
+    idx += 2;
+  }
   if (status) { conditions.push(`status=$${idx++}`); params.push(status); }
   if (type) { conditions.push(`type=$${idx++}`); params.push(type); }
   if (date_from) { conditions.push(`created_at >= $${idx++}`); params.push(date_from); }
