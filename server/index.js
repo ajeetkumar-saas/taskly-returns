@@ -1396,12 +1396,16 @@ app.post('/api/returns/:id/refund', requireShopAccess, async (req, res) => {
     // Atomically "claim" this return for refunding — if it's already refunded or another
     // request is mid-refund right now, this UPDATE matches zero rows and we bail out
     // immediately, before ever calling Shopify. Closes the double-click/retry race condition.
+    // shop_domain=$2 also prevents a caller authenticated for their OWN shop from triggering a
+    // real Shopify refund on a DIFFERENT shop's order just by guessing/enumerating return ids.
     const claim = await pool.query(
-      `UPDATE returns SET refund_status='processing' WHERE id=$1 AND status != 'refunded' AND (refund_status IS NULL OR refund_status NOT IN ('processing','completed')) RETURNING *`,
-      [req.params.id]
+      `UPDATE returns SET refund_status='processing' WHERE id=$1 AND shop_domain=$2 AND status != 'refunded' AND (refund_status IS NULL OR refund_status NOT IN ('processing','completed')) RETURNING *`,
+      [req.params.id, req.verifiedShop]
     );
     if (!claim.rows.length) {
-      const existing = await pool.query('SELECT status, refund_status FROM returns WHERE id=$1', [req.params.id]);
+      // Scope this lookup by shop too — don't let a caller distinguish "belongs to another
+      // shop" from "doesn't exist" (would leak that a given return id exists elsewhere).
+      const existing = await pool.query('SELECT status, refund_status FROM returns WHERE id=$1 AND shop_domain=$2', [req.params.id, req.verifiedShop]);
       if (!existing.rows.length) return res.status(404).json({ error: 'Return not found' });
       return res.status(409).json({ error: 'This return is already refunded or a refund is already in progress' });
     }
@@ -1881,7 +1885,14 @@ app.patch('/api/returns/:id', requireShopAccess, async (req, res) => {
   if (risk_level !== undefined) { fields.push(`risk_level=$${idx++}`); values.push(risk_level); }
   fields.push(`updated_at=NOW()`);
   values.push(req.params.id);
-  const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idx} RETURNING *`, values);
+  const idParamIdx = idx++;
+  values.push(req.verifiedShop);
+  // Scope the UPDATE to the caller's own verified shop — requireShopAccess resolves
+  // req.verifiedShop from the record's real owner when possible, but a caller can also supply
+  // their OWN shop via ?shop=, which passes the middleware fine; without this WHERE clause that
+  // would let any authenticated seller modify a DIFFERENT shop's return just by guessing its id.
+  const r = await pool.query(`UPDATE returns SET ${fields.join(',')} WHERE id=$${idParamIdx} AND shop_domain=$${idx} RETURNING *`, values);
+  if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
   const ret = r.rows[0];
   if (status && ret.customer_email) {
     const tpl = await getEmailTemplates(ret.shop_domain);
@@ -2461,7 +2472,7 @@ app.post('/api/upload-image', requireShopAccess, async (req, res) => {
 // Save images to return
 app.post('/api/returns/:id/images', requireShopAccess, async (req, res) => {
   const { images } = req.body;
-  const r = await pool.query('UPDATE returns SET images=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [images || '', req.params.id]);
+  const r = await pool.query('UPDATE returns SET images=$1, updated_at=NOW() WHERE id=$2 AND shop_domain=$3 RETURNING *', [images || '', req.params.id, req.verifiedShop]);
   if (!r.rows.length) return res.status(404).json({ error: 'Return not found' });
   res.json(r.rows[0]);
 });
@@ -2615,7 +2626,12 @@ app.post('/api/locations', requireShopAccess, async (req, res) => {
 });
 
 app.delete('/api/locations/:id', requireShopAccess, async (req, res) => {
-  await pool.query('DELETE FROM locations WHERE id=$1', [req.params.id]);
+  // Scope by shop_domain — req.params.id here refers to a locations row, not a return, so
+  // requireShopAccess's returns-table auto-lookup doesn't apply; it relies on the caller
+  // supplying ?shop= (verified against their own token). This WHERE clause is what actually
+  // stops a caller deleting a DIFFERENT shop's location by guessing an id.
+  const r = await pool.query('DELETE FROM locations WHERE id=$1 AND shop_domain=$2 RETURNING id', [req.params.id, req.verifiedShop]);
+  if (!r.rows.length) return res.status(404).json({ error: 'Location not found' });
   res.json({ ok: true });
 });
 

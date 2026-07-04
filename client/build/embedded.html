@@ -1657,7 +1657,7 @@ async function loadEmailTemplates() {
   }
   try {
     const r = await fetch("/api/email-templates?shop=" + encodeURIComponent(currentShop), {
-      headers: getAuthHeaders(),
+      headers: await shopAuthHeaders(),
     });
     const d = await r.json();
     emailTplData = d.templates;
@@ -2467,7 +2467,7 @@ async function deleteWebhook(id) {
 // Locations
 async function loadLocations() {
   try {
-    const r = await fetch("/api/locations?shop=" + currentShop);
+    const r = await fetch("/api/locations?shop=" + currentShop, { headers: await shopAuthHeaders() });
     const d = await r.json();
     const tb = document.getElementById("locationsTb");
     if (!d.length) {
@@ -2483,7 +2483,7 @@ async function loadLocations() {
       .join("");
   } catch (e) {}
 }
-function addLocation() {
+async function addLocation() {
   const name = prompt("Location name (e.g. Main Warehouse):");
   if (!name) return;
   const address = prompt("Address:");
@@ -2491,9 +2491,10 @@ function addLocation() {
   const state = prompt("State:");
   const pincode = prompt("Pincode:");
   const phone = prompt("Phone:");
+  const auth = await shopAuthHeaders();
   fetch("/api/locations", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...auth },
     body: JSON.stringify({
       shop: currentShop,
       name,
@@ -2510,7 +2511,10 @@ function addLocation() {
   });
 }
 async function deleteLocation(id) {
-  await fetch("/api/locations/" + id, { method: "DELETE" });
+  await fetch("/api/locations/" + id + "?shop=" + encodeURIComponent(currentShop), {
+    method: "DELETE",
+    headers: await shopAuthHeaders(),
+  });
   showAlert("Deleted", "success");
   loadLocations();
 }
@@ -2631,15 +2635,17 @@ function obNext() {
     const e = document.getElementById("obShipEmail").value,
       p = document.getElementById("obShipPass").value;
     if (e && p) {
-      fetch("/api/shiprocket/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shop: currentShop, email: e, password: p }),
-      })
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.ok) showAlert("Shiprocket connected!", "success");
-        });
+      shopAuthHeaders().then((auth) =>
+        fetch("/api/shiprocket/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...auth },
+          body: JSON.stringify({ shop: currentShop, email: e, password: p }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.ok) showAlert("Shiprocket connected!", "success");
+          }),
+      );
     }
   }
   if (obStep === 1) {
