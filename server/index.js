@@ -10,6 +10,26 @@ const { Pool } = require('pg');
 let lastEmailError = '';
 let lastExchange = { stage: 'none' };
 
+// Previously a crash was completely silent — Railway restarts the process, but nobody is told
+// it happened. These email the owner before the process exits (uncaughtException) or continues
+// with a swallowed promise rejection (unhandledRejection), using the same notifyAdmin() pattern
+// used elsewhere for install/uninstall alerts. Kept deliberately minimal (no new dependency) —
+// notifyAdmin/sendEmail are function declarations further down and are hoisted, so this is safe
+// to register this early even though they're defined later in the file.
+let lastCrashAlertAt = 0;
+const CRASH_ALERT_THROTTLE_MS = 10 * 60 * 1000; // avoid an email storm if something crash-loops
+function alertCrash(kind, err) {
+  const now = Date.now();
+  console.error(`[${kind}]`, err);
+  if (now - lastCrashAlertAt < CRASH_ALERT_THROTTLE_MS) return;
+  lastCrashAlertAt = now;
+  try {
+    notifyAdmin(`🚨 GoReturn ${kind}`, `<p><strong>${kind}</strong> at ${new Date().toUTCString()}</p><pre style="white-space:pre-wrap;font-size:12px;color:#555">${(err?.stack || String(err)).substring(0, 2000)}</pre>`).catch(()=>{});
+  } catch(e) { /* never let alerting itself crash the process */ }
+}
+process.on('uncaughtException', (err) => alertCrash('Uncaught Exception', err));
+process.on('unhandledRejection', (err) => alertCrash('Unhandled Rejection', err));
+
 // AES-256-GCM encryption for sensitive credentials (Shiprocket passwords) stored in DB.
 // Requires CREDENTIAL_ENCRYPTION_KEY env var (32-byte hex = 64 hex chars).
 function encryptCredential(plaintext) {
@@ -161,6 +181,30 @@ app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; }
 }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Error-rate alerting: previously a crash or a spike in 500s was completely silent — nobody
+// would know until a merchant complained. Tracks 5xx responses in a rolling window and emails
+// the owner once (throttled) if they cross a threshold, using the same notifyAdmin() pattern
+// already used for install/uninstall.
+let recentErrorCount = 0;
+let errorWindowStart = Date.now();
+let lastErrorAlertAt = 0;
+const ERROR_WINDOW_MS = 5 * 60 * 1000;
+const ERROR_ALERT_THRESHOLD = 10;
+const ERROR_ALERT_THROTTLE_MS = 30 * 60 * 1000;
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (res.statusCode < 500) return;
+    const now = Date.now();
+    if (now - errorWindowStart > ERROR_WINDOW_MS) { recentErrorCount = 0; errorWindowStart = now; }
+    recentErrorCount++;
+    if (recentErrorCount >= ERROR_ALERT_THRESHOLD && now - lastErrorAlertAt > ERROR_ALERT_THROTTLE_MS) {
+      lastErrorAlertAt = now;
+      notifyAdmin('🚨 GoReturn High Error Rate', `<p><strong>${recentErrorCount}</strong> server errors (5xx) in the last ${ERROR_WINDOW_MS/60000} minutes.</p><p>Latest: ${req.method} ${req.path} → ${res.statusCode}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
+    }
+  });
+  next();
+});
 
 // Lightweight in-memory rate limiter (no extra dependency, fine for a single Railway instance).
 // Protects against abuse/spam since there was previously zero request throttling anywhere.
