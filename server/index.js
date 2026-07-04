@@ -435,7 +435,7 @@ function requirePlan(planName) {
   return async (req, res, next) => {
     await requireShopAccess(req, res, async () => {
       // After requireShopAccess validates shop, check plan
-      const targetShop = req.query.shop || req.body?.shop_domain;
+      const targetShop = req.query.shop || req.body?.shop_domain || req.body?.shop;
       if (!targetShop) return res.status(400).json({ error: 'shop required' });
 
       // Platform owner (admin dashboard) always has full visibility - plan
@@ -1137,15 +1137,16 @@ app.get('/api/billing/plans', (req, res) => {
 
 // Stores
 app.get('/api/shopify/stores', async (req, res, next) => {
-  // Auth check: with ?shop= param validate shop access, without it require owner
-  const token = req.headers['x-auth-token'];
-  if (!token) return res.status(401).json({ error: 'Authentication required' });
-
+  // With ?shop= param: validate via requireShopAccess (accepts embedded app
+  // Bearer token OR x-auth-token — real sellers only have the Bearer token).
+  // Without ?shop=: owner login required.
   const { shop } = req.query;
   if (shop) {
-    // Shop-scoped: validate owner owns this shop
     return requireShopAccess(req, res, next);
   }
+
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
   // All stores: owner only
   const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
   if (!admin.rows.length || admin.rows[0].role !== 'owner') {
@@ -2393,7 +2394,7 @@ app.post('/api/returns/:id/images', requireShopAccess, async (req, res) => {
 });
 
 // Automation Rules (Wonder Bot)
-app.get('/api/automation/rules', requireShopAccess, async (req, res) => {
+app.get('/api/automation/rules', requirePlan('growth'), async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
@@ -2407,7 +2408,7 @@ app.get('/api/automation/rules', requireShopAccess, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/automation/rules', requireShopAccess, async (req, res) => {
+app.post('/api/automation/rules', requirePlan('growth'), async (req, res) => {
   const { shop, name, condition_field, condition_operator, condition_value, action_type, action_value } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
@@ -2422,13 +2423,13 @@ app.post('/api/automation/rules', requireShopAccess, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/automation/rules/:id', requireShopAccess, async (req, res) => {
+app.delete('/api/automation/rules/:id', requirePlan('growth'), async (req, res) => {
   await pool.query('DELETE FROM automation_rules WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
 
 // Promotions (Wonder Promotions - incentivize exchange over refund)
-app.get('/api/promotions', requireShopAccess, async (req, res) => {
+app.get('/api/promotions', requirePlan('growth'), async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
@@ -2442,7 +2443,7 @@ app.get('/api/promotions', requireShopAccess, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/promotions', requireShopAccess, async (req, res) => {
+app.post('/api/promotions', requirePlan('growth'), async (req, res) => {
   const { shop, name, type, bonus_percent, message } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
@@ -2456,14 +2457,14 @@ app.post('/api/promotions', requireShopAccess, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch('/api/promotions/:id', requireShopAccess, async (req, res) => {
+app.patch('/api/promotions/:id', requirePlan('growth'), async (req, res) => {
   const { active } = req.body;
   const r = await pool.query('UPDATE promotions SET active=$1 WHERE id=$2 RETURNING *', [active, req.params.id]);
   res.json(r.rows[0]);
 });
 
 // Webhooks
-app.get('/api/webhooks', requireShopAccess, async (req, res) => {
+app.get('/api/webhooks', requirePlan('pro'), async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
@@ -2476,7 +2477,7 @@ app.get('/api/webhooks', requireShopAccess, async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/webhooks', requireShopAccess, async (req, res) => {
+app.post('/api/webhooks', requirePlan('pro'), async (req, res) => {
   const { shop, url, events } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
@@ -2489,7 +2490,7 @@ app.post('/api/webhooks', requireShopAccess, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/webhooks/:id', requireShopAccess, async (req, res) => {
+app.delete('/api/webhooks/:id', requirePlan('pro'), async (req, res) => {
   await pool.query('DELETE FROM webhooks WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
