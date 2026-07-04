@@ -1231,26 +1231,58 @@ if(params.get('connected'))showAlert('Store connected!','success');
 
 // Initialize Shopify context for embedded app mode
 async function initEmbeddedApp() {
+  const urlShop = new URLSearchParams(location.search).get('shop');
+  if(urlShop) return; // Already have shop in URL
   if(!window.shopify) return; // Not embedded mode
+
   try {
-    const config = await window.shopify.config();
-    const shop = config.shopDomain || config.shop || '';
-    if(shop) {
-      const normalized = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
-      currentShop = normalized;
-      window.location.href = window.location.href.split('?')[0] + '?shop=' + encodeURIComponent(normalized);
-      return; // Redirect will reload
+    // Wait for Shopify App Bridge to be ready
+    console.log('[GoReturn] Waiting for Shopify App Bridge...');
+    let attempts = 0;
+    while(!window.shopify && attempts < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
     }
-  } catch(e) { console.log('Shopify context init error:', e); }
+    if(!window.shopify) { console.log('[GoReturn] Shopify App Bridge not available'); return; }
+
+    console.log('[GoReturn] Getting Shopify config...');
+    const config = await window.shopify.config();
+    console.log('[GoReturn] Config received:', config);
+
+    const shop = config.shopDomain || config.shop || '';
+    console.log('[GoReturn] Shop from config:', shop);
+
+    if(!shop) {
+      console.log('[GoReturn] No shop in config, trying admin API');
+      return;
+    }
+
+    const normalized = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
+    console.log('[GoReturn] Normalized shop:', normalized);
+
+    // Redirect to add shop parameter
+    const newUrl = window.location.href.split('?')[0] + '?shop=' + encodeURIComponent(normalized);
+    console.log('[GoReturn] Redirecting to:', newUrl);
+    window.location.href = newUrl;
+    return; // Redirect will reload
+  } catch(e) {
+    console.error('[GoReturn] Shopify context init error:', e);
+  }
 }
 
-initEmbeddedApp().then(() => {
+// Run initialization
+(async () => {
+  console.log('[GoReturn] Starting initialization...');
+  try {
+    await initEmbeddedApp();
+    console.log('[GoReturn] Embedded app init complete, loading stores...');
+  } catch(e) {
+    console.error('[GoReturn] Init error:', e);
+  }
+
   checkDashboardAuth();
-  loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Init error:',e));
-}).catch(() => {
-  checkDashboardAuth();
-  loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Init error:',e));
-});
+  loadStores().then(()=>loadReturns()).then(()=>renderDashCharts()).catch(e=>console.log('Load error:',e));
+})();
 </script>
 </body>
 </html>
