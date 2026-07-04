@@ -441,7 +441,7 @@ function requirePlan(planName) {
       pool.query('SELECT plan FROM shopify_stores WHERE shop_domain=$1', [targetShop])
         .then(r => {
           if (!r.rows.length) return res.status(404).json({ error: 'Store not found' });
-          const storeP lan = r.rows[0].plan || 'free';
+          const storePlan = r.rows[0].plan || 'free';
           const plans = { free: 0, starter: 1, growth: 2, pro: 3 };
           const required = plans[planName] || 1;
           const current = plans[storePlan] || 0;

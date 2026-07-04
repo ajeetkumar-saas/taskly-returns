@@ -1,0 +1,36 @@
+
+> taskly-returns@1.0.0 start
+> node server/index.js
+
+D:\Claud Code\taskly-returns\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+AggregateError [ECONNREFUSED]: 
+    at D:\Claud Code\taskly-returns\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initDB (D:\Claud Code\taskly-returns\server\index.js:221:3) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5432
+        at createConnectionError (node:net:1677:14)
+        at afterConnectMultiple (node:net:1707:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5432
+        at createConnectionError (node:net:1677:14)
+        at afterConnectMultiple (node:net:1707:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+
+Node.js v22.15.0
