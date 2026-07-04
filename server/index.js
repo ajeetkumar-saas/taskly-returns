@@ -9,6 +9,7 @@ const { Pool } = require('pg');
 
 let lastEmailError = '';
 let lastExchange = { stage: 'none' };
+let webhookFailureCount = 0; // counts genuine webhook processing failures (500s) since boot — exposed via /api/health for at-a-glance background-job health
 
 // Previously a crash was completely silent — Railway restarts the process, but nobody is told
 // it happened. These email the owner before the process exits (uncaughtException) or continues
@@ -96,20 +97,46 @@ async function sendEmail(to, subject, html, attachments, returnId) {
     console.log('Email throttled for return', returnId);
     return false;
   }
-  try {
-    const body = { from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>', to: [to], subject, html };
-    if (attachments && attachments.length) body.attachments = attachments;
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
-      body: JSON.stringify(body)
-    });
-    const d = await r.json();
-    if (!r.ok || d.error) { lastEmailError = d.message || d.error?.message || 'Send failed'; console.log('Email error:', lastEmailError); return false; }
-    console.log('Email sent to:', to, 'id:', d.id);
-    lastEmailError = '';
-    return true;
-  } catch(e) { lastEmailError = e.message; console.log('Email error:', e.message); return false; }
+  const body = { from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>', to: [to], subject, html };
+  if (attachments && attachments.length) body.attachments = attachments;
+  // Retry transient failures (network error, 429, 5xx) with short backoff — same pattern as
+  // shopifyFetch elsewhere in this file, just fewer/shorter retries since this runs inline in
+  // request handlers and shouldn't add much latency. Previously a single transient blip meant a
+  // customer never got their return-status email at all, with no second attempt.
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
+        body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) {
+        lastEmailError = d.message || d.error?.message || 'Send failed';
+        if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) {
+          console.log(`Email transient error (attempt ${attempt + 1}/${maxRetries + 1}):`, lastEmailError);
+          await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
+          continue;
+        }
+        console.log('Email error:', lastEmailError);
+        return false;
+      }
+      console.log('Email sent to:', to, 'id:', d.id);
+      lastEmailError = '';
+      return true;
+    } catch(e) {
+      lastEmailError = e.message;
+      if (attempt < maxRetries) {
+        console.log(`Email network error (attempt ${attempt + 1}/${maxRetries + 1}):`, e.message);
+        await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
+        continue;
+      }
+      console.log('Email error:', e.message);
+      return false;
+    }
+  }
+  return false;
 }
 
 function returnStatusEmail(customerName, orderId, status, amount, extra) {
@@ -1261,7 +1288,7 @@ app.get('/api/billing/confirm', async (req, res) => {
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.redirect('/');
   try {
-    const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}.json`, {
+    const r = await shopifyFetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}.json`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     const data = await r.json();
@@ -1380,13 +1407,13 @@ app.get('/api/shopify/orders', async (req, res) => {
     const sr = await getStoreToken(shop);
     if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. Open GoReturn in Shopify Admin first.' });
     try {
-      const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
+      const r = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
         headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
       });
       if (r.status === 401 || r.status === 403) {
         const reauth = await attemptReauth(shop);
         if (reauth) {
-          const retry = await fetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
+          const retry = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders.json?status=any&limit=50`, {
             headers: { 'X-Shopify-Access-Token': reauth }
           });
           if (retry.ok) { const rd = await retry.json(); return res.json(rd.orders || []); }
@@ -1406,7 +1433,10 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
   const sr = await getStoreToken(shop);
   if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected. The store owner needs to open GoReturn app in Shopify Admin first.' });
   try {
-    const r = await fetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
+    // shopifyFetch adds transient-failure retry (429/5xx with backoff) on top of the existing
+    // 401/403 re-auth handling below — this is a read-only GET on the customer-facing return
+    // portal, so a brief Shopify API blip previously meant a hard failure with no second try.
+    const r = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
       headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
     });
     if (r.status === 401 || r.status === 403) {
@@ -1414,7 +1444,7 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
       const reauth = await attemptReauth(shop);
       if (reauth) {
         // Retry the request with new token
-        const retry = await fetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
+        const retry = await shopifyFetch(`https://${shop}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number)}&status=any`, {
           headers: { 'X-Shopify-Access-Token': reauth }
         });
         if (retry.ok) {
@@ -2832,7 +2862,7 @@ app.post('/api/webhooks/shopify/refunds-create', async (req, res) => {
     // only a console.log nobody sees.
     console.log('orders/refunds/create webhook error:', e.message);
     notifyAdmin('🚨 GoReturn Webhook Failure (refunds/create)', `<p>Error: ${e.message}</p><p>Shop: ${req.headers['x-shopify-shop-domain']||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
-    return res.status(500).send('Internal error — please retry');
+    webhookFailureCount++; return res.status(500).send('Internal error — please retry');
   }
   res.status(200).json({ ok: true });
 });
@@ -2858,7 +2888,7 @@ app.post('/api/webhooks/customers/data_request', async (req, res) => {
     // preventing Shopify's retry from giving us a second chance to actually process the request.
     console.log('data_request error:', e.message);
     notifyAdmin('🚨 GoReturn GDPR Webhook Failure (data_request)', `<p>Error: ${e.message}</p><p>Shop: ${req.body?.shop_domain||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
-    return res.status(500).send('Internal error — please retry');
+    webhookFailureCount++; return res.status(500).send('Internal error — please retry');
   }
   res.status(200).json({ ok: true });
 });
@@ -2882,7 +2912,7 @@ app.post('/api/webhooks/customers/redact', async (req, res) => {
     // scrubbed despite Shopify believing it was).
     console.log('customers/redact error:', e.message);
     notifyAdmin('🚨 GoReturn GDPR Webhook Failure (customers/redact)', `<p>Error: ${e.message}</p><p>Shop: ${req.body?.shop_domain||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
-    return res.status(500).send('Internal error — please retry');
+    webhookFailureCount++; return res.status(500).send('Internal error — please retry');
   }
   res.status(200).json({ ok: true });
 });
@@ -2905,7 +2935,7 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
     if (failures.length) {
       console.log('shop/redact partial failure:', failures);
       notifyAdmin('🚨 GoReturn GDPR Webhook Failure (shop/redact)', `<p>Shop: ${shopDomain}</p><ul>${failures.map(f => `<li>${f}</li>`).join('')}</ul><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
-      return res.status(500).send('Internal error — please retry');
+      webhookFailureCount++; return res.status(500).send('Internal error — please retry');
     }
   }
   res.status(200).json({ ok: true });
@@ -2926,14 +2956,14 @@ app.post('/api/webhooks/app-uninstalled', async (req, res) => {
       // previously this failure was silently swallowed and still reported as success.
       console.log('app-uninstalled delete error:', e.message);
       notifyAdmin('🚨 GoReturn Webhook Failure (app-uninstalled)', `<p>Failed to clean up ${shopDomain}: ${e.message}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
-      return res.status(500).send('Internal error — please retry');
+      webhookFailureCount++; return res.status(500).send('Internal error — please retry');
     }
     notifyAdmin('⚠️ GoReturn Uninstalled', `<p><strong>${storeName}</strong> (${shopDomain}) just <strong>uninstalled</strong> GoReturn.</p><p>Time: ${new Date().toUTCString()}</p><p>Their stored data has been removed. A reinstall will be detected as a new install.</p>`);
   }
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none', last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none', last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot', webhook_failures_since_boot: webhookFailureCount }));
 
 // Debug/support endpoints — gated by a dedicated DEBUG_KEY env var (never hardcoded, never the
 // same secret used anywhere else). Fails CLOSED: if DEBUG_KEY isn't set in the environment, these
@@ -3096,7 +3126,7 @@ async function syncBillingStatus() {
       try {
         const token = await getValidToken(row.shop_domain);
         if (!token) continue;
-        const r = await fetch(`https://${row.shop_domain}/admin/api/2025-04/recurring_application_charges/${row.billing_charge_id}.json`, {
+        const r = await shopifyFetch(`https://${row.shop_domain}/admin/api/2025-04/recurring_application_charges/${row.billing_charge_id}.json`, {
           headers: { 'X-Shopify-Access-Token': token }
         });
         const d = await r.json();
