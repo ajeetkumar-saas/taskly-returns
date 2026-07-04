@@ -1000,9 +1000,13 @@ app.get('/api/billing/plans', (req, res) => {
 });
 
 // Stores
-app.get('/api/shopify/stores', async (req, res) => {
+app.get('/api/shopify/stores', (req, res, next) => {
+  // With ?shop= param: validate that shop only sees its own record
+  // Without ?shop=: only platform owner can list all stores
+  if (req.query.shop) return requireShopAccess(req, res, next);
+  return requireOwner(req, res, next);
+}, async (req, res) => {
   const { shop } = req.query;
-  // Embedded mode passes ?shop= — return ONLY that store so a seller can never see others
   if (shop) {
     const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
     return res.json(r.rows);
@@ -1033,7 +1037,7 @@ app.get('/api/shopify/orders', requireShopAccess, async (req, res) => {
     }
     const d = await r.json();
     res.json(d.orders || []);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('orders fetch error:', e.message); res.status(500).json({ error: 'Failed to fetch orders' }); }
 });
 
 // Single order lookup (for customer return portal)
@@ -1101,7 +1105,7 @@ app.get('/api/shopify/order-lookup', async (req, res) => {
         variant_title: li.variant_title
       }))
     });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('order-lookup error:', e.message); res.status(500).json({ error: 'Failed to look up order' }); }
 });
 
 // Process a real Shopify refund for a return (Shopify App Store rule 1.1.15: refunds must go through
@@ -1277,7 +1281,7 @@ app.get('/api/analytics', requireShopAccess, async (req, res) => {
 });
 
 // Order Analytics — fetch all orders from Shopify and analyze
-app.get('/api/analytics/orders', async (req, res) => {
+app.get('/api/analytics/orders', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1632,7 +1636,7 @@ app.get('/api/shiprocket/status', requireShopAccess, async (req, res) => {
 });
 
 // Fetch the seller's Shiprocket pickup locations (return destinations)
-app.get('/api/shiprocket/pickup-locations', async (req, res) => {
+app.get('/api/shiprocket/pickup-locations', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -1645,7 +1649,7 @@ app.get('/api/shiprocket/pickup-locations', async (req, res) => {
 });
 
 // Save Shiprocket automation settings
-app.post('/api/shiprocket/settings', async (req, res) => {
+app.post('/api/shiprocket/settings', requireShopAccess, async (req, res) => {
   const { shop, auto_pickup, pickup_location } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET shiprocket_auto_pickup=$1, shiprocket_pickup_location=$2 WHERE shop_domain=$3',
@@ -1733,7 +1737,7 @@ async function createShiprocketPickup(shop, d) {
 }
 
 // Shiprocket APIs (per seller)
-app.post('/api/shiprocket/pickup', async (req, res) => {
+app.post('/api/shiprocket/pickup', requireShopAccess, async (req, res) => {
   const { return_id, shop } = req.body;
   if (!return_id || !shop) return res.status(400).json({ error: 'return_id and shop required' });
   try {
@@ -1742,7 +1746,7 @@ app.post('/api/shiprocket/pickup', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/shiprocket/track/:shipment_id', async (req, res) => {
+app.get('/api/shiprocket/track/:shipment_id', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   try {
     const data = shop ? await sellerShiprocketAPI(shop, `/courier/track/shipment/${req.params.shipment_id}`, 'GET') : await shiprocketAPI(`/courier/track/shipment/${req.params.shipment_id}`, 'GET');
@@ -1754,7 +1758,7 @@ app.get('/api/shiprocket/track/:shipment_id', async (req, res) => {
 const LogisticsProviders = require('./logistics-providers.js');
 
 // Get all connected logistics providers for a store
-app.get('/api/logistics/status', async (req, res) => {
+app.get('/api/logistics/status', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -1779,11 +1783,11 @@ app.get('/api/logistics/status', async (req, res) => {
       default: store.default_logistics || 'shiprocket',
       auto_pickup: store.logistics_auto_pickup || false
     });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('logistics status error:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ---- ClickPost ----
-app.post('/api/logistics/clickpost/connect', async (req, res) => {
+app.post('/api/logistics/clickpost/connect', requireShopAccess, async (req, res) => {
   const { shop, api_key } = req.body;
   if (!shop || !api_key) return res.status(400).json({ error: 'shop and api_key required' });
   try {
@@ -1794,10 +1798,10 @@ app.post('/api/logistics/clickpost/connect', async (req, res) => {
     );
     logActivity(req, 'ClickPost Connected', shop);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('clickpost connect error:', e.message); res.status(500).json({ error: 'Failed to connect ClickPost' }); }
 });
 
-app.post('/api/logistics/clickpost/disconnect', async (req, res) => {
+app.post('/api/logistics/clickpost/disconnect', requireShopAccess, async (req, res) => {
   const { shop } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET clickpost_api_key=\'\', clickpost_connected=false WHERE shop_domain=$1', [shop]);
@@ -1806,7 +1810,7 @@ app.post('/api/logistics/clickpost/disconnect', async (req, res) => {
 });
 
 // ---- Shadowfax ----
-app.post('/api/logistics/shadowfax/connect', async (req, res) => {
+app.post('/api/logistics/shadowfax/connect', requireShopAccess, async (req, res) => {
   const { shop, client_id, client_secret } = req.body;
   if (!shop || !client_id || !client_secret) return res.status(400).json({ error: 'shop, client_id, client_secret required' });
   try {
@@ -1818,10 +1822,10 @@ app.post('/api/logistics/shadowfax/connect', async (req, res) => {
     );
     logActivity(req, 'Shadowfax Connected', shop);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('shadowfax connect error:', e.message); res.status(500).json({ error: 'Failed to connect Shadowfax' }); }
 });
 
-app.post('/api/logistics/shadowfax/disconnect', async (req, res) => {
+app.post('/api/logistics/shadowfax/disconnect', requireShopAccess, async (req, res) => {
   const { shop } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET shadowfax_client_id=\'\', shadowfax_client_secret=\'\', shadowfax_connected=false WHERE shop_domain=$1', [shop]);
@@ -1830,7 +1834,7 @@ app.post('/api/logistics/shadowfax/disconnect', async (req, res) => {
 });
 
 // ---- Delhivery ----
-app.post('/api/logistics/delhivery/connect', async (req, res) => {
+app.post('/api/logistics/delhivery/connect', requireShopAccess, async (req, res) => {
   const { shop, api_key } = req.body;
   if (!shop || !api_key) return res.status(400).json({ error: 'shop and api_key required' });
   try {
@@ -1840,10 +1844,10 @@ app.post('/api/logistics/delhivery/connect', async (req, res) => {
     );
     logActivity(req, 'Delhivery Connected', shop);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('delhivery connect error:', e.message); res.status(500).json({ error: 'Failed to connect Delhivery' }); }
 });
 
-app.post('/api/logistics/delhivery/disconnect', async (req, res) => {
+app.post('/api/logistics/delhivery/disconnect', requireShopAccess, async (req, res) => {
   const { shop } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET delhivery_api_key=\'\', delhivery_connected=false WHERE shop_domain=$1', [shop]);
@@ -1852,7 +1856,7 @@ app.post('/api/logistics/delhivery/disconnect', async (req, res) => {
 });
 
 // ---- XpressBees ----
-app.post('/api/logistics/xpressbees/connect', async (req, res) => {
+app.post('/api/logistics/xpressbees/connect', requireShopAccess, async (req, res) => {
   const { shop, api_token } = req.body;
   if (!shop || !api_token) return res.status(400).json({ error: 'shop and api_token required' });
   try {
@@ -1862,10 +1866,10 @@ app.post('/api/logistics/xpressbees/connect', async (req, res) => {
     );
     logActivity(req, 'XpressBees Connected', shop);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('xpressbees connect error:', e.message); res.status(500).json({ error: 'Failed to connect XpressBees' }); }
 });
 
-app.post('/api/logistics/xpressbees/disconnect', async (req, res) => {
+app.post('/api/logistics/xpressbees/disconnect', requireShopAccess, async (req, res) => {
   const { shop } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET xpressbees_api_token=\'\', xpressbees_connected=false WHERE shop_domain=$1', [shop]);
@@ -1874,7 +1878,7 @@ app.post('/api/logistics/xpressbees/disconnect', async (req, res) => {
 });
 
 // ---- WareIQ ----
-app.post('/api/logistics/wareiq/connect', async (req, res) => {
+app.post('/api/logistics/wareiq/connect', requireShopAccess, async (req, res) => {
   const { shop, client_id, client_secret } = req.body;
   if (!shop || !client_id || !client_secret) return res.status(400).json({ error: 'shop, client_id, client_secret required' });
   try {
@@ -1886,10 +1890,10 @@ app.post('/api/logistics/wareiq/connect', async (req, res) => {
     );
     logActivity(req, 'WareIQ Connected', shop);
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.log('wareiq connect error:', e.message); res.status(500).json({ error: 'Failed to connect WareIQ' }); }
 });
 
-app.post('/api/logistics/wareiq/disconnect', async (req, res) => {
+app.post('/api/logistics/wareiq/disconnect', requireShopAccess, async (req, res) => {
   const { shop } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query('UPDATE shopify_stores SET wareiq_client_id=\'\', wareiq_client_secret=\'\', wareiq_connected=false WHERE shop_domain=$1', [shop]);
@@ -1898,7 +1902,7 @@ app.post('/api/logistics/wareiq/disconnect', async (req, res) => {
 });
 
 // Set default logistics provider & auto-pickup preference
-app.post('/api/logistics/settings', async (req, res) => {
+app.post('/api/logistics/settings', requireShopAccess, async (req, res) => {
   const { shop, default_provider, auto_pickup } = req.body;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   await pool.query(
@@ -1984,7 +1988,7 @@ app.post('/api/offers/redeem', requireShopAccess, async (req, res) => {
 });
 
 // Customer fraud score
-app.get('/api/analytics/fraud', async (req, res) => {
+app.get('/api/analytics/fraud', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -2001,7 +2005,7 @@ app.get('/api/analytics/fraud', async (req, res) => {
 });
 
 // Pincode risk score
-app.get('/api/analytics/pincode-risk', async (req, res) => {
+app.get('/api/analytics/pincode-risk', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -2080,7 +2084,7 @@ app.post('/api/returns/:id/images', requireShopAccess, async (req, res) => {
 });
 
 // Automation Rules (Wonder Bot)
-app.get('/api/automation/rules', async (req, res) => {
+app.get('/api/automation/rules', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
@@ -2094,7 +2098,7 @@ app.get('/api/automation/rules', async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/automation/rules', async (req, res) => {
+app.post('/api/automation/rules', requireShopAccess, async (req, res) => {
   const { shop, name, condition_field, condition_operator, condition_value, action_type, action_value } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS automation_rules (
@@ -2109,13 +2113,13 @@ app.post('/api/automation/rules', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/automation/rules/:id', async (req, res) => {
+app.delete('/api/automation/rules/:id', requireShopAccess, async (req, res) => {
   await pool.query('DELETE FROM automation_rules WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
 
 // Promotions (Wonder Promotions - incentivize exchange over refund)
-app.get('/api/promotions', async (req, res) => {
+app.get('/api/promotions', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
@@ -2129,7 +2133,7 @@ app.get('/api/promotions', async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/promotions', async (req, res) => {
+app.post('/api/promotions', requireShopAccess, async (req, res) => {
   const { shop, name, type, bonus_percent, message } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS promotions (
@@ -2143,14 +2147,14 @@ app.post('/api/promotions', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch('/api/promotions/:id', async (req, res) => {
+app.patch('/api/promotions/:id', requireShopAccess, async (req, res) => {
   const { active } = req.body;
   const r = await pool.query('UPDATE promotions SET active=$1 WHERE id=$2 RETURNING *', [active, req.params.id]);
   res.json(r.rows[0]);
 });
 
 // Webhooks
-app.get('/api/webhooks', async (req, res) => {
+app.get('/api/webhooks', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
@@ -2163,7 +2167,7 @@ app.get('/api/webhooks', async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/webhooks', async (req, res) => {
+app.post('/api/webhooks', requireShopAccess, async (req, res) => {
   const { shop, url, events } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS webhooks (
@@ -2176,7 +2180,7 @@ app.post('/api/webhooks', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/webhooks/:id', async (req, res) => {
+app.delete('/api/webhooks/:id', requireShopAccess, async (req, res) => {
   await pool.query('DELETE FROM webhooks WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
@@ -2199,7 +2203,7 @@ app.post('/api/shopify/tag-order', requireShopAccess, async (req, res) => {
 });
 
 // Locations (multiple warehouse addresses)
-app.get('/api/locations', async (req, res) => {
+app.get('/api/locations', requireShopAccess, async (req, res) => {
   const { shop } = req.query;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS locations (
@@ -2212,7 +2216,7 @@ app.get('/api/locations', async (req, res) => {
   } catch(e) { res.json([]); }
 });
 
-app.post('/api/locations', async (req, res) => {
+app.post('/api/locations', requireShopAccess, async (req, res) => {
   const { shop, name, address, city, state, pincode, phone, is_default } = req.body;
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS locations (
@@ -2227,7 +2231,7 @@ app.post('/api/locations', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/locations/:id', async (req, res) => {
+app.delete('/api/locations/:id', requireShopAccess, async (req, res) => {
   await pool.query('DELETE FROM locations WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
