@@ -244,6 +244,9 @@ app.use('/api/shiprocket', rateLimit(15, 60 * 1000)); // prevent courier API quo
 app.use('/api/shiprocket', rateLimitByShop(30, 60 * 1000)); // per-shop cap — Shiprocket bills per API call, so this is the actual Denial-of-Wallet guard
 app.use('/api/logistics', rateLimitByShop(30, 60 * 1000)); // same Denial-of-Wallet concern for other courier providers
 app.use('/api/logistics', rateLimit(15, 60 * 1000)); // prevent courier API quota burn
+app.use('/api/team', rateLimit(30, 60 * 1000)); // team invite/edit/delete had no dedicated cap beyond the generous 180/min global default
+app.use('/api/billing/create', rateLimitByShop(10, 60 * 1000)); // each call creates a real pending Shopify charge — cap spam-creation per shop
+app.use('/api/upload-image', rateLimitByShop(60, 60 * 1000)); // storage-exhaustion guard noted in the earlier audit — generous enough that multiple customers uploading return photos simultaneously won't hit it, just blocks obvious abuse
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
