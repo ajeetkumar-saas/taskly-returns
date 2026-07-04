@@ -232,6 +232,7 @@ async function initDB() {
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS refresh_token TEXT DEFAULT ''`).catch(e=>console.log('alter refresh_token:',e.message));
   await pool.query(`ALTER TABLE shopify_stores DROP COLUMN IF EXISTS token_expires_at`).catch(e=>console.log('drop token_expires_at:',e.message));
   await pool.query(`ALTER TABLE shopify_stores ADD COLUMN token_expires_at BIGINT DEFAULT 0`).catch(e=>console.log('add token_expires_at:',e.message));
+  await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP DEFAULT NULL`).catch(e=>console.log('add trial_ends_at:',e.message));
   await pool.query(`
     CREATE TABLE IF NOT EXISTS returns (
       id SERIAL PRIMARY KEY,
@@ -1123,7 +1124,9 @@ app.get('/api/billing/confirm', async (req, res) => {
         headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
         body: JSON.stringify({ recurring_application_charge: { id: charge_id } })
       });
-      await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan || 'starter', shop]);
+      const planData = PLANS[plan] || PLANS.starter;
+      const trialEndsAt = planData.trial_days > 0 ? new Date(Date.now() + planData.trial_days * 86400000) : null;
+      await pool.query('UPDATE shopify_stores SET plan=$1, trial_ends_at=$2 WHERE shop_domain=$3', [plan || 'starter', trialEndsAt, shop]);
     }
     res.redirect(`/?shop=${shop}&connected=true&plan=${plan}`);
   } catch(e) {
@@ -1158,10 +1161,10 @@ app.get('/api/shopify/stores', async (req, res, next) => {
   const { shop } = req.query;
   try {
     if (shop) {
-      const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
+      const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at, trial_ends_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
       return res.json(r.rows);
     }
-    const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at FROM shopify_stores ORDER BY created_at DESC');
+    const r = await pool.query('SELECT shop_domain, store_name, store_email, plan, created_at, trial_ends_at FROM shopify_stores ORDER BY created_at DESC');
     res.json(r.rows);
   } catch(e) {
     console.log('stores endpoint error:', e.message);
@@ -2222,8 +2225,10 @@ app.post('/api/logistics/settings', requireShopAccess, async (req, res) => {
 
 app.post('/api/admin/change-plan', requireOwner, async (req, res) => {
   const { shop, plan } = req.body;
-  await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [plan, shop]);
-  await logActivity(req, 'Plan Changed', `${shop} → ${plan}`);
+  const planData = PLANS[plan] || PLANS.starter;
+  const trialEndsAt = planData.trial_days > 0 ? new Date(Date.now() + planData.trial_days * 86400000) : null;
+  await pool.query('UPDATE shopify_stores SET plan=$1, trial_ends_at=$2 WHERE shop_domain=$3', [plan, trialEndsAt, shop]);
+  await logActivity(req, 'Plan Changed', `${shop} → ${plan}${trialEndsAt ? ' (trial until ' + trialEndsAt.toLocaleDateString() + ')' : ''}`);
   res.json({ ok: true });
 });
 
