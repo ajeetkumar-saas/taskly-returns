@@ -832,7 +832,7 @@ async function refreshAccessToken(shop, refreshToken) {
     const expiresAt = Date.now() + ((d.expires_in || 3600) * 1000);
     await pool.query(
       'UPDATE shopify_stores SET access_token=$1, refresh_token=$2, token_expires_at=$3 WHERE shop_domain=$4',
-      [d.access_token, d.refresh_token || refreshToken, expiresAt, shop]
+      [encryptCredential(d.access_token), encryptCredential(d.refresh_token || refreshToken), expiresAt, shop]
     );
     console.log('Token refreshed:', { shop, expires_in: d.expires_in });
     return d.access_token;
@@ -848,7 +848,7 @@ async function attemptReauth(shop) {
   const row = sr.rows[0];
   if (row.refresh_token) {
     console.log(`attemptReauth: trying refresh for ${shop}`);
-    const fresh = await refreshAccessToken(shop, row.refresh_token);
+    const fresh = await refreshAccessToken(shop, decryptCredential(row.refresh_token));
     if (fresh) return fresh;
   }
   console.log(`attemptReauth: no refresh token for ${shop}, needs App Bridge re-auth`);
@@ -903,24 +903,29 @@ async function shopifyFetchAllPages(initialUrl, options, maxPages) {
   return results;
 }
 
-// Returns a valid (non-expired) access token, refreshing if needed
+// Returns a valid (non-expired) access token, refreshing if needed.
+// This is the single funnel almost every Shopify API call in the app goes through
+// (directly or via getStoreToken()), so decrypting here covers the whole app —
+// decryptCredential() transparently passes through old plaintext rows too.
 async function getValidToken(shop) {
   const sr = await pool.query('SELECT access_token, refresh_token, token_expires_at FROM shopify_stores WHERE shop_domain=$1', [shop]);
   if (!sr.rows.length) return null;
   const row = sr.rows[0];
   if (!row.access_token) return null;
+  const accessToken = decryptCredential(row.access_token);
+  const refreshToken = row.refresh_token ? decryptCredential(row.refresh_token) : row.refresh_token;
   const expiresAt = Number(row.token_expires_at || 0);
   // If token has expiry info and is within 2 min of expiry, refresh it
-  if (row.refresh_token && expiresAt > 0 && Date.now() > (expiresAt - 120000)) {
-    const fresh = await refreshAccessToken(shop, row.refresh_token);
+  if (refreshToken && expiresAt > 0 && Date.now() > (expiresAt - 120000)) {
+    const fresh = await refreshAccessToken(shop, refreshToken);
     if (fresh) return fresh;
   }
   // If token has expiry info and is already expired but no refresh token, it's dead
-  if (expiresAt > 0 && Date.now() > expiresAt && !row.refresh_token) {
+  if (expiresAt > 0 && Date.now() > expiresAt && !refreshToken) {
     console.log(`Store ${shop} token expired with no refresh token`);
     return null;
   }
-  return row.access_token;
+  return accessToken;
 }
 
 // Token exchange - convert App Bridge session token to EXPIRING offline access token
@@ -969,7 +974,7 @@ app.post('/api/auth/token-exchange', async (req, res) => {
       try {
         await pool.query(
           'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
-          [shop, d.access_token, d.refresh_token || '', expiresAt, storeName, storeEmail]
+          [shop, encryptCredential(d.access_token), encryptCredential(d.refresh_token || ''), expiresAt, storeName, storeEmail]
         );
         lastExchange.db = 'saved';
         if (isNewInstall) {
@@ -977,7 +982,7 @@ app.post('/api/auth/token-exchange', async (req, res) => {
         }
       } catch(dbErr) {
         lastExchange.db = 'FAILED: ' + dbErr.message;
-        try { await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [d.access_token, shop]); lastExchange.db += ' | fallback-saved'; } catch(e2) { lastExchange.db += ' | fallback-failed:'+e2.message; }
+        try { await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [encryptCredential(d.access_token), shop]); lastExchange.db += ' | fallback-saved'; } catch(e2) { lastExchange.db += ' | fallback-failed:'+e2.message; }
       }
       res.json({ ok: true, shop: storeName, expires_in: d.expires_in, expiring: !!d.refresh_token });
     } else {
@@ -1053,10 +1058,10 @@ app.get('/api/auth/callback', async (req, res) => {
     try {
       await pool.query(
         'INSERT INTO shopify_stores (shop_domain, access_token, refresh_token, token_expires_at, store_name, store_email) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (shop_domain) DO UPDATE SET access_token=$2, refresh_token=$3, token_expires_at=$4, store_name=$5, store_email=$6',
-        [shop, access_token, tokenData.refresh_token || '', expiresAt, storeName, storeEmail]
+        [shop, encryptCredential(access_token), encryptCredential(tokenData.refresh_token || ''), expiresAt, storeName, storeEmail]
       );
     } catch(e) {
-      await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [access_token, shop]).catch(()=>{});
+      await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [encryptCredential(access_token), shop]).catch(()=>{});
     }
 
     // Register Shopify webhooks needed for sync (idempotent — Shopify deduplicates by topic+address)
@@ -2771,7 +2776,7 @@ app.get('/api/debug/force-refresh', async (req, res) => {
   const rt = sr.rows[0].refresh_token;
   if (!rt) return res.json({ error: 'no refresh_token stored (token is non-expiring type - reopen embedded app)' });
   const before = sr.rows[0].token_expires_at;
-  const fresh = await refreshAccessToken(shop, rt);
+  const fresh = await refreshAccessToken(shop, decryptCredential(rt));
   const after = await pool.query('SELECT token_expires_at, LEFT(refresh_token,10) AS rt FROM shopify_stores WHERE shop_domain=$1', [shop]);
   res.json({ refreshed: !!fresh, token_prefix: fresh ? fresh.substring(0,10) : null, expires_before: Number(before), expires_after: Number(after.rows[0].token_expires_at), new_refresh_prefix: after.rows[0].rt });
 });
