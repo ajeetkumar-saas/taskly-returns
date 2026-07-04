@@ -56,8 +56,26 @@ function decryptCredential(stored) {
     throw new Error('Failed to decrypt credential: ' + e.message);
   }
 }
-async function sendEmail(to, subject, html, attachments) {
+// Email throttle to prevent spam: max 3 emails per return per hour
+const emailThrottle = {};
+function canSendEmail(returnId, toEmail) {
+  const key = `${returnId}:${toEmail}`;
+  const now = Date.now();
+  const sent = emailThrottle[key] || [];
+  // Remove entries older than 1 hour
+  emailThrottle[key] = sent.filter(t => now - t < 60 * 60 * 1000);
+  if (emailThrottle[key].length >= 3) return false;
+  emailThrottle[key].push(now);
+  return true;
+}
+
+async function sendEmail(to, subject, html, attachments, returnId) {
   if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
+  // Throttle emails per return (prevent spam)
+  if (returnId && !canSendEmail(returnId, to)) {
+    console.log('Email throttled for return', returnId);
+    return false;
+  }
   try {
     const body = { from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>', to: [to], subject, html };
     if (attachments && attachments.length) body.attachments = attachments;
@@ -1517,9 +1535,19 @@ app.get('/api/returns/export', async (req, res) => {
   const params = [shop];
   query += ' ORDER BY created_at DESC';
   const r = await pool.query(query, params);
+
+  // RFC 4180 CSV escaping: double quotes inside quoted fields, wrap in quotes if contains quotes/commas
+  function csvEscape(val) {
+    const str = String(val || '');
+    if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return `"${str}"`;
+  }
+
   const headers = 'ID,Order ID,Order Number,Customer Name,Email,Phone,Product,SKU,Qty,Reason,Details,Status,Type,Refund Method,Amount,Tracking,Pickup Status,Created,Updated\n';
   const csv = headers + r.rows.map(row =>
-    `${row.id},"${row.order_id}","${row.order_number}","${row.customer_name}","${row.customer_email}","${row.customer_phone}","${row.product_name}","${row.product_sku}",${row.quantity},"${row.reason}","${row.reason_detail}",${row.status},${row.type},${row.refund_method},${row.amount},"${row.tracking_number}",${row.pickup_status},"${row.created_at}","${row.updated_at}"`
+    `${row.id},${csvEscape(row.order_id)},${csvEscape(row.order_number)},${csvEscape(row.customer_name)},${csvEscape(row.customer_email)},${csvEscape(row.customer_phone)},${csvEscape(row.product_name)},${csvEscape(row.product_sku)},${row.quantity},${csvEscape(row.reason)},${csvEscape(row.reason_detail)},${row.status},${row.type},${row.refund_method},${row.amount},${csvEscape(row.tracking_number)},${row.pickup_status},${csvEscape(row.created_at)},${csvEscape(row.updated_at)}`
   ).join('\n');
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=returns-export.csv');
@@ -1696,7 +1724,7 @@ app.post('/api/returns', async (req, res) => {
     const ph = { order: order_number||order_id, name: customer_name, amount, product: product_name };
     const subj = fillPlaceholders(tpl.pending.subject, ph);
     const msg = fillPlaceholders(tpl.pending.message, ph);
-    sendEmail(customer_email, subj, returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount, { product: product_name, reason, refund_method, returnId: r.rows[0].id, customMsg: msg }));
+    sendEmail(customer_email, subj, returnStatusEmail(customer_name||'Customer', order_number||order_id, 'pending', amount, { product: product_name, reason, refund_method, returnId: r.rows[0].id, customMsg: msg }), null, r.rows[0].id);
   }
   res.json(r.rows[0]);
 });
