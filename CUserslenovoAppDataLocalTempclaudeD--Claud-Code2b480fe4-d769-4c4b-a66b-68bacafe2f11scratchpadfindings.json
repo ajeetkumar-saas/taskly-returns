@@ -1,0 +1,82 @@
+[
+  {
+    "severity": "HIGH",
+    "angle": 1,
+    "file": "server/index.js",
+    "line": "1450-1456",
+    "title": "CSV export doesn't validate admin scope to target shop",
+    "summary": "Admin token verified but no shop_domain restriction for admin_users. Platform admin can export any shop's customer PII by passing attacker's shop domain.",
+    "failure_scenario": "Attacker calls GET /api/returns/export?shop=victim.myshopify.com&token=ADMIN_TOKEN and retrieves victim merchant's customer names, emails, phones in CSV.",
+    "code_snippet": "const adminCheck = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);\nif (adminCheck.rows.length === 0 && memberCheck.rows.length === 0) {\n  return res.status(401).json({ error: 'Unauthorized' });\n}"
+  },
+  {
+    "severity": "HIGH",
+    "angle": 1,
+    "file": "server/index.js",
+    "line": "26-30",
+    "title": "Credential decryption returns corrupted data when key missing",
+    "summary": "If CREDENTIAL_ENCRYPTION_KEY not set, line 29 executes stored.slice(4) on plaintext credentials, slicing off first 4 chars instead of extracting real encrypted data. Corrupts password.",
+    "failure_scenario": "Password stored as plaintext before encryption enabled. Later, decrypt function slices off 'enc:' from plaintext, passes corrupted password to Shiprocket API, auth fails silently. Merchant cannot create returns.",
+    "code_snippet": "if (!key || key.length < 64) return stored.slice(4);"
+  },
+  {
+    "severity": "HIGH",
+    "angle": 1,
+    "file": "server/index.js",
+    "line": "1034-1050",
+    "title": "/api/shopify/stores has conflicting auth policies",
+    "summary": "Line 1036 requires x-auth-token, but line 1042 calls requireShopAccess which also accepts Shopify Bearer token. Allows Bearer token to bypass x-auth-token requirement.",
+    "failure_scenario": "Attacker with compromised Shopify idToken calls GET /api/shopify/stores?shop=test.myshopify.com with Authorization: Bearer TOKEN. requireShopAccess validates token and returns store data even without x-auth-token header.",
+    "code_snippet": "if (!token) return res.status(401).json({ error: 'Authentication required' });\nif (shop) return requireShopAccess(req, res, next);"
+  },
+  {
+    "severity": "MEDIUM",
+    "angle": 1,
+    "file": "server/index.js",
+    "line": "1450-1453",
+    "title": "CSV export team_member check lacks role validation",
+    "summary": "memberCheck validates session_token + shop_domain exist but doesn't check member.role. Viewer-level team members can export customer PII.",
+    "failure_scenario": "Team member with 'viewer' role calls export. Query finds team_members record, returns 200 with full customer dataset (emails, phones) that viewer shouldn't access.",
+    "code_snippet": "const memberCheck = adminCheck.rows.length === 0\n  ? await pool.query('SELECT * FROM team_members WHERE session_token=$1 AND shop_domain=$2', [token, shop])\n  : { rows: [] };"
+  },
+  {
+    "severity": "MEDIUM",
+    "angle": 1,
+    "file": "server/index.js",
+    "line": "34-35",
+    "title": "Decryption hardcodes GCM tag slice bounds without buffer length check",
+    "summary": "Decryption slices buf.slice(12, 28) for tag without verifying buf.length >= 28. If buffer too short, tag is partial/empty, setAuthTag silently accepts, decipher fails on final().",
+    "failure_scenario": "Corrupted or truncated encrypted password in DB (28+ bytes expected). Decrypt tries setAuthTag with 16-byte slice that may be wrong. decipher.final() throws, caught silently, returns empty string as password.",
+    "code_snippet": "const tag = buf.slice(12, 28);\nconst encrypted = buf.slice(28);\ndecipher.setAuthTag(tag);"
+  },
+  {
+    "severity": "MEDIUM",
+    "angle": 1,
+    "file": "server/index.js",
+    "line": "1462-1464",
+    "title": "CSV export doesn't escape double quotes in values",
+    "summary": "Customer names and other fields wrapped in quotes but internal quotes not escaped. Customer name with quotes breaks CSV format.",
+    "failure_scenario": "Customer named Alice \"Boss\" Johnson. CSV line becomes: ID,\"Alice \"Boss\" Johnson\" — unpaired quotes break CSV parsing. Excel/parsers may fail or expose adjacent customer data.",
+    "code_snippet": "`${row.id},\"${row.order_id}\",\"${row.customer_name}\"`"
+  },
+  {
+    "severity": "MEDIUM",
+    "angle": 1,
+    "file": "client/build/index.html",
+    "line": "902",
+    "title": "Export token passed in cleartext URL query parameter",
+    "summary": "Session token sent as URL query param instead of header. Browser history, proxy logs, and referrer headers expose token in plaintext.",
+    "failure_scenario": "User clicks export. URL /api/returns/export?...&token=abc123xyz saved in browser history and sync to other devices. Attacker with device access or network logs retrieves token and exports all merchant data.",
+    "code_snippet": "window.open('/api/returns/export?shop='+currentShop+'&token='+encodeURIComponent(t),'_blank');"
+  },
+  {
+    "severity": "MEDIUM",
+    "angle": 3,
+    "file": "server/index.js",
+    "line": "1042",
+    "title": "CSV export doesn't call requireShopAccess but reimplements auth",
+    "summary": "CSV export has custom token validation logic (lines 1450-1456) that duplicates requireShopAccess checks. If requireShopAccess changes, CSV export falls out of sync.",
+    "failure_scenario": "Future refactor changes requireShopAccess to check new permission field. CSV export still uses old logic, allows unauthorized exports.",
+    "code_snippet": "Custom auth in export vs middleware in other endpoints"
+  }
+]

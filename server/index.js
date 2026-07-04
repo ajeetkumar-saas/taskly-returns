@@ -11,11 +11,18 @@ let lastEmailError = '';
 let lastExchange = { stage: 'none' };
 
 // AES-256-GCM encryption for sensitive credentials (Shiprocket passwords) stored in DB.
-// Requires CREDENTIAL_ENCRYPTION_KEY env var (32-byte hex = 64 hex chars). If not set,
-// falls back to storing plaintext so existing deploys don't break before the key is added.
+// Requires CREDENTIAL_ENCRYPTION_KEY env var (32-byte hex = 64 hex chars).
 function encryptCredential(plaintext) {
   const key = process.env.CREDENTIAL_ENCRYPTION_KEY;
-  if (!key || key.length < 64) return plaintext; // fallback: no key set yet
+  if (!key || key.length < 64) {
+    // In production, this is a critical misconfiguration
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('CRITICAL: CREDENTIAL_ENCRYPTION_KEY not set or invalid. Production cannot run without encryption key.');
+    }
+    // In development, allow plaintext fallback
+    console.warn('WARNING: CREDENTIAL_ENCRYPTION_KEY not set. Using plaintext (dev only).');
+    return plaintext;
+  }
   const keyBuf = Buffer.from(key.slice(0, 64), 'hex');
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', keyBuf, iv);
@@ -24,19 +31,30 @@ function encryptCredential(plaintext) {
   return 'enc:' + Buffer.concat([iv, tag, encrypted]).toString('base64');
 }
 function decryptCredential(stored) {
-  if (!stored || !stored.startsWith('enc:')) return stored; // plaintext fallback
+  if (!stored || !stored.startsWith('enc:')) return stored; // plaintext legacy data
   const key = process.env.CREDENTIAL_ENCRYPTION_KEY;
-  if (!key || key.length < 64) return stored.slice(4); // key missing — best effort
+  if (!key || key.length < 64) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('CRITICAL: CREDENTIAL_ENCRYPTION_KEY not set or invalid. Cannot decrypt credentials.');
+    }
+    // Dev fallback: try to recover by slicing (works only if stored as 'enc:' + plaintext)
+    console.warn('WARNING: Cannot decrypt without CREDENTIAL_ENCRYPTION_KEY (dev only).');
+    return stored.slice(4);
+  }
   try {
     const keyBuf = Buffer.from(key.slice(0, 64), 'hex');
     const buf = Buffer.from(stored.slice(4), 'base64');
+    if (buf.length < 28) throw new Error('Corrupted credential data (too short)');
     const iv = buf.slice(0, 12);
     const tag = buf.slice(12, 28);
     const encrypted = buf.slice(28);
     const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuf, iv);
     decipher.setAuthTag(tag);
     return decipher.update(encrypted) + decipher.final('utf8');
-  } catch(e) { console.log('Credential decrypt error:', e.message); return ''; }
+  } catch(e) {
+    console.error('Credential decrypt error:', e.message);
+    throw new Error('Failed to decrypt credential: ' + e.message);
+  }
 }
 async function sendEmail(to, subject, html, attachments) {
   if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
@@ -377,6 +395,33 @@ async function requireOwner(req, res, next) {
   next();
 }
 
+// Shop access + plan requirement (for premium features)
+// planName: 'starter', 'growth', or 'pro'
+function requirePlan(planName) {
+  return async (req, res, next) => {
+    await requireShopAccess(req, res, () => {
+      // After requireShopAccess validates shop, check plan
+      const targetShop = req.query.shop || req.body?.shop_domain;
+      if (!targetShop) return res.status(400).json({ error: 'shop required' });
+
+      pool.query('SELECT plan FROM shopify_stores WHERE shop_domain=$1', [targetShop])
+        .then(r => {
+          if (!r.rows.length) return res.status(404).json({ error: 'Store not found' });
+          const storeP lan = r.rows[0].plan || 'free';
+          const plans = { free: 0, starter: 1, growth: 2, pro: 3 };
+          const required = plans[planName] || 1;
+          const current = plans[storePlan] || 0;
+          if (current < required) {
+            const upgradeText = { starter: 'Starter ($11.99/mo)', growth: 'Growth ($23.99/mo)', pro: 'Pro ($47.99/mo)' }[planName];
+            return res.status(402).json({ error: `This feature requires ${upgradeText} plan` });
+          }
+          next();
+        })
+        .catch(e => res.status(500).json({ error: 'Plan check failed' }));
+    });
+  };
+}
+
 // Verifies a Shopify App Bridge session token (the short-lived JWT from shopify.idToken()).
 // Confirms the signature (HMAC-SHA256 with the app's client secret), expiry, and which shop
 // it was issued for — this is the standard "verify session tokens" requirement for embedded apps.
@@ -507,7 +552,7 @@ app.post('/api/admin/login', async (req, res) => {
   }
   const otp = generateOTP();
   otpStore[email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
-  const sent = await sendEmail(email, 'GoReturn Login OTP - ' + otp, otpEmailHtml(otp, user.name));
+  const sent = await sendEmail(email, 'Your GoReturn Login Code', otpEmailHtml(otp, user.name));
   if (!sent) return res.status(500).json({ error: 'Email failed: ' + (lastEmailError || 'Unknown error') });
   res.json({ ok: true, otpSent: true, message: 'OTP sent to ' + email });
 });
@@ -1312,7 +1357,7 @@ app.get('/api/returns/stats', requireShopAccess, async (req, res) => {
 });
 
 // Analytics with date range
-app.get('/api/analytics', requireShopAccess, async (req, res) => {
+app.get('/api/analytics', requirePlan('growth'), async (req, res) => {
   const { shop, days } = req.query;
   const d = parseInt(days) || 30;
   const p = shop ? [shop] : [];
@@ -1330,7 +1375,7 @@ app.get('/api/analytics', requireShopAccess, async (req, res) => {
 });
 
 // Order Analytics — fetch all orders from Shopify and analyze
-app.get('/api/analytics/orders', requireShopAccess, async (req, res) => {
+app.get('/api/analytics/orders', requirePlan('growth'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1393,7 +1438,7 @@ app.get('/api/analytics/orders', requireShopAccess, async (req, res) => {
 });
 
 // Return Analytics by location and product
-app.get('/api/analytics/returns-deep', requireShopAccess, async (req, res) => {
+app.get('/api/analytics/returns-deep', requirePlan('growth'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
@@ -1438,21 +1483,35 @@ app.get('/api/analytics/returns-deep', requireShopAccess, async (req, res) => {
   } catch(e) { console.log('returns-deep error:', e.message); res.status(500).json({ error: 'Failed to load deep analytics' }); }
 });
 
-// Export CSV
+// Export CSV (Starter+ plan, with auth validation)
 app.get('/api/returns/export', async (req, res) => {
-  const { shop, token } = req.query;
-  // CSV download via window.open() cannot send auth headers, so we accept a short-lived
-  // export token passed as a query param instead. Token must match the merchant's session_token
-  // in the DB to prevent any unauthenticated access to customer PII.
+  const { shop } = req.query;
+  // Token can come from query param (legacy/CSV download) OR Authorization header (modern)
+  let token = req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
+
   if (!shop) return res.status(400).json({ error: 'shop required' });
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop)) return res.status(400).json({ error: 'Invalid shop domain' });
-  if (!token) return res.status(401).json({ error: 'Export token required' });
-  const adminCheck = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
-  const memberCheck = adminCheck.rows.length === 0
-    ? await pool.query('SELECT * FROM team_members WHERE session_token=$1 AND shop_domain=$2', [token, shop])
-    : { rows: [] };
-  if (adminCheck.rows.length === 0 && memberCheck.rows.length === 0) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
+  // Check plan requirement (Starter+)
+  const planCheck = await pool.query('SELECT plan FROM shopify_stores WHERE shop_domain=$1', [shop]);
+  if (!planCheck.rows.length) return res.status(404).json({ error: 'Store not found' });
+  const plan = planCheck.rows[0].plan || 'free';
+  const allowedPlans = ['starter', 'growth', 'pro'];
+  if (!allowedPlans.includes(plan)) {
+    return res.status(402).json({ error: `Export requires ${plan === 'free' ? 'Starter' : plan} plan. Please upgrade.` });
+  }
+
+  // Validate token (owner can export any store, team members only own store + check role)
+  const adminCheck = await pool.query('SELECT role FROM admin_users WHERE session_token=$1', [token]);
+  if (adminCheck.rows.length > 0 && adminCheck.rows[0].role === 'owner') {
+    // Owner: proceed
+  } else {
+    // Team member: must have admin role on the specific store
+    const memberCheck = await pool.query('SELECT role FROM team_members WHERE session_token=$1 AND shop_domain=$2 AND role=$3', [token, shop, 'admin']);
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Unauthorized (admin or owner role required)' });
+    }
   }
   let query = 'SELECT id,order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,status,type,refund_method,amount,tracking_number,pickup_status,created_at,updated_at FROM returns WHERE shop_domain=$1';
   const params = [shop];
@@ -1577,44 +1636,55 @@ app.post('/api/returns', async (req, res) => {
   if (!shop_domain || !order_id || !customer_email || !reason) return res.status(400).json({ error: 'shop_domain, order_id, customer_email and reason are required' });
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop_domain)) return res.status(400).json({ error: 'Invalid shop domain' });
 
-  // Verify order ownership and enforce return window via Shopify API (soft checks — blocking only on clear violations)
+  // Check return count limit per plan (REQUIRED GATE)
+  const storeRow = await pool.query('SELECT plan, return_window, exchange_window FROM shopify_stores WHERE shop_domain=$1', [shop_domain]);
+  if (!storeRow.rows.length) return res.status(404).json({ error: 'Store not found' });
+  const storePlan = storeRow.rows[0].plan || 'free';
+  const planLimits = { free: 5, starter: 50, growth: 150, pro: 500 };
+  const returnLimit = planLimits[storePlan] || 5;
+  const returnCount = await pool.query('SELECT COUNT(*) as cnt FROM returns WHERE shop_domain=$1 AND type=$2', [shop_domain, type || 'return']);
+  const count = parseInt(returnCount.rows[0].cnt || 0);
+  if (count >= returnLimit) {
+    return res.status(402).json({ error: `${storePlan} plan limit (${returnLimit} ${type || 'return'}s) reached. Please upgrade.` });
+  }
+
+  // Verify order ownership and enforce return window via Shopify API (REQUIRED)
   let shopifyVerified = false;
   try {
     const sr = await getStoreToken(shop_domain);
-    if (sr?.rows?.length > 0) {
-      const orderResp = await fetch(`https://${shop_domain}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number || order_id)}&status=any`, {
-        headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
-      });
-      if (orderResp.ok) {
-        const orderData = await orderResp.json();
-        const order = (orderData.orders || [])[0];
-        if (order) {
-          shopifyVerified = true;
-          // Order ownership check — email must match (only if Shopify fetch succeeded)
-          if (order.email && order.email.toLowerCase() !== customer_email.toLowerCase()) {
-            return res.status(403).json({ error: 'Email does not match this order' });
-          }
-          // Return window check (only if Shopify fetch succeeded)
-          const storeRow = await pool.query('SELECT return_window, exchange_window FROM shopify_stores WHERE shop_domain=$1', [shop_domain]);
-          const window = type === 'exchange'
-            ? (storeRow.rows[0]?.exchange_window ?? 14)
-            : (storeRow.rows[0]?.return_window ?? 14);
-          const orderAge = (Date.now() - new Date(order.created_at).getTime()) / (1000 * 60 * 60 * 24);
-          if (orderAge > window) {
-            return res.status(400).json({ error: `Return window of ${window} days has passed for this order` });
-          }
-          // Amount validation — cap at actual order total (only if Shopify fetch succeeded)
-          const orderTotal = parseFloat(order.total_price || 0);
-          if (amount && parseFloat(amount) > orderTotal) {
-            return res.status(400).json({ error: 'Refund amount cannot exceed order total' });
-          }
-        }
-      }
+    if (!sr?.rows?.length) return res.status(503).json({ error: 'Store API token not configured. Contact support.' });
+
+    const orderResp = await fetch(`https://${shop_domain}/admin/api/2025-04/orders.json?name=${encodeURIComponent(order_number || order_id)}&status=any`, {
+      headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+    });
+    if (!orderResp.ok) return res.status(503).json({ error: 'Unable to verify order with Shopify. Please try again.' });
+
+    const orderData = await orderResp.json();
+    const order = (orderData.orders || [])[0];
+    if (!order) return res.status(404).json({ error: 'Order not found on Shopify' });
+
+    shopifyVerified = true;
+    // Order ownership check — email must match
+    if (order.email && order.email.toLowerCase() !== customer_email.toLowerCase()) {
+      return res.status(403).json({ error: 'Email does not match this order' });
+    }
+    // Return window check
+    const window = type === 'exchange'
+      ? (storeRow.rows[0]?.exchange_window ?? 14)
+      : (storeRow.rows[0]?.return_window ?? 14);
+    const orderAge = (Date.now() - new Date(order.created_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (orderAge > window) {
+      return res.status(400).json({ error: `Return window of ${window} days has passed for this order` });
+    }
+    // Amount validation — cap at actual order total
+    const orderTotal = parseFloat(order.total_price || 0);
+    if (amount && parseFloat(amount) > orderTotal) {
+      return res.status(400).json({ error: 'Refund amount cannot exceed order total' });
     }
   } catch(verifyErr) {
-    console.log('Order verify warning (non-blocking):', verifyErr.message);
+    console.log('Order verify error:', verifyErr.message);
+    return res.status(503).json({ error: 'Shopify verification failed. Please try again later.' });
   }
-  // If Shopify verification failed/unavailable, still allow submit so portal doesn't break (merchant approval is final gate)
 
   const r = await pool.query(
     `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
@@ -2086,7 +2156,7 @@ app.post('/api/offers/redeem', requireShopAccess, async (req, res) => {
 });
 
 // Customer fraud score
-app.get('/api/analytics/fraud', requireShopAccess, async (req, res) => {
+app.get('/api/analytics/fraud', requirePlan('growth'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   try {
@@ -2103,7 +2173,7 @@ app.get('/api/analytics/fraud', requireShopAccess, async (req, res) => {
 });
 
 // Pincode risk score
-app.get('/api/analytics/pincode-risk', requireShopAccess, async (req, res) => {
+app.get('/api/analytics/pincode-risk', requirePlan('growth'), async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).json({ error: 'shop required' });
   const sr = await getStoreToken(shop);
