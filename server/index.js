@@ -2791,7 +2791,15 @@ app.post('/api/webhooks/shopify/refunds-create', async (req, res) => {
       );
       console.log(`Shopify refund webhook: synced return #${retId} → refunded (Shopify refund ${refundId})`);
     }
-  } catch(e) { console.log('orders/refunds/create webhook error:', e.message); }
+  } catch(e) {
+    // A genuine processing failure here previously still returned 200, telling Shopify
+    // "delivered successfully" and permanently losing the chance for Shopify's own webhook
+    // retry to recover it. Return 500 so Shopify retries, and alert immediately instead of
+    // only a console.log nobody sees.
+    console.log('orders/refunds/create webhook error:', e.message);
+    notifyAdmin('🚨 GoReturn Webhook Failure (refunds/create)', `<p>Error: ${e.message}</p><p>Shop: ${req.headers['x-shopify-shop-domain']||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
+    return res.status(500).send('Internal error — please retry');
+  }
   res.status(200).json({ ok: true });
 });
 
@@ -2811,7 +2819,13 @@ app.post('/api/webhooks/customers/data_request', async (req, res) => {
         sendEmail(notifyTo, `Customer Data Request - ${customer.email}`, `<div style="font-family:sans-serif;padding:20px"><h3>Shopify Customer Data Request</h3><p>Customer: ${customer.email}</p><p>Records found in GoReturn for ${shop_domain}:</p><p>${rows}</p><p style="color:#888;font-size:12px">Please forward this to the customer per Shopify's GDPR requirements.</p></div>`);
       }
     }
-  } catch(e) { console.log('data_request error:', e.message); }
+  } catch(e) {
+    // GDPR compliance webhook — a swallowed failure here previously still reported success,
+    // preventing Shopify's retry from giving us a second chance to actually process the request.
+    console.log('data_request error:', e.message);
+    notifyAdmin('🚨 GoReturn GDPR Webhook Failure (data_request)', `<p>Error: ${e.message}</p><p>Shop: ${req.body?.shop_domain||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
+    return res.status(500).send('Internal error — please retry');
+  }
   res.status(200).json({ ok: true });
 });
 
@@ -2828,7 +2842,14 @@ app.post('/api/webhooks/customers/redact', async (req, res) => {
         [shop_domain, customer.email]
       );
     }
-  } catch(e) { console.log('customers/redact error:', e.message); }
+  } catch(e) {
+    // GDPR compliance webhook — a failed redact previously still reported success, which is
+    // both a data-loss risk (retry never happens) and a compliance risk (PII not actually
+    // scrubbed despite Shopify believing it was).
+    console.log('customers/redact error:', e.message);
+    notifyAdmin('🚨 GoReturn GDPR Webhook Failure (customers/redact)', `<p>Error: ${e.message}</p><p>Shop: ${req.body?.shop_domain||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
+    return res.status(500).send('Internal error — please retry');
+  }
   res.status(200).json({ ok: true });
 });
 
@@ -2837,10 +2858,21 @@ app.post('/api/webhooks/shop/redact', async (req, res) => {
   console.log('Shop redact webhook received');
   const shopDomain = req.body?.shop_domain;
   if (shopDomain) {
-    try { await pool.query('DELETE FROM returns WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
-    try { await pool.query('DELETE FROM store_settings WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
-    try { await pool.query('DELETE FROM team_members WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
-    try { await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
+    // Attempt all 4 deletes regardless of earlier failures (each DELETE is idempotent, so a
+    // Shopify retry re-running an already-succeeded one is harmless) — but track failures so we
+    // can report genuine failure instead of always claiming success on this GDPR-mandated
+    // deletion, which previously silently swallowed every error.
+    const failures = [];
+    const attempt = async (label, query) => { try { await pool.query(query, [shopDomain]); } catch(e) { failures.push(`${label}: ${e.message}`); } };
+    await attempt('returns', 'DELETE FROM returns WHERE shop_domain = $1');
+    await attempt('store_settings', 'DELETE FROM store_settings WHERE shop_domain = $1');
+    await attempt('team_members', 'DELETE FROM team_members WHERE shop_domain = $1');
+    await attempt('shopify_stores', 'DELETE FROM shopify_stores WHERE shop_domain = $1');
+    if (failures.length) {
+      console.log('shop/redact partial failure:', failures);
+      notifyAdmin('🚨 GoReturn GDPR Webhook Failure (shop/redact)', `<p>Shop: ${shopDomain}</p><ul>${failures.map(f => `<li>${f}</li>`).join('')}</ul><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
+      return res.status(500).send('Internal error — please retry');
+    }
   }
   res.status(200).json({ ok: true });
 });
@@ -2853,7 +2885,15 @@ app.post('/api/webhooks/app-uninstalled', async (req, res) => {
   if (shopDomain) {
     let storeName = shopDomain;
     try { const s = await pool.query('SELECT store_name FROM shopify_stores WHERE shop_domain=$1', [shopDomain]); if (s.rows[0]?.store_name) storeName = s.rows[0].store_name; } catch(e) {}
-    try { await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shopDomain]); } catch(e) {}
+    try {
+      await pool.query('DELETE FROM shopify_stores WHERE shop_domain = $1', [shopDomain]);
+    } catch(e) {
+      // Not GDPR-critical like shop/redact, but still worth Shopify retrying and us knowing —
+      // previously this failure was silently swallowed and still reported as success.
+      console.log('app-uninstalled delete error:', e.message);
+      notifyAdmin('🚨 GoReturn Webhook Failure (app-uninstalled)', `<p>Failed to clean up ${shopDomain}: ${e.message}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
+      return res.status(500).send('Internal error — please retry');
+    }
     notifyAdmin('⚠️ GoReturn Uninstalled', `<p><strong>${storeName}</strong> (${shopDomain}) just <strong>uninstalled</strong> GoReturn.</p><p>Time: ${new Date().toUTCString()}</p><p>Their stored data has been removed. A reinstall will be detected as a new install.</p>`);
   }
   res.status(200).json({ ok: true });
