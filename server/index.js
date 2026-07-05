@@ -907,22 +907,6 @@ app.get('/api/debug/last-exchange', (req, res) => {
   res.json(lastExchange);
 });
 
-// TEMPORARY: controlled Sentry verification for simulated Shopify API failures.
-// Gated by DEBUG_KEY (fails closed, same as every other /api/debug/* route above) — never
-// publicly reachable. No real Shopify call is made; this only exercises the Sentry capture path.
-// Remove after verification is confirmed in the Sentry dashboard.
-app.get('/api/debug/sentry-shopify-test', (req, res) => {
-  if (!checkDebugKey(req, res)) return;
-  const err = new Error('Shopify API returned 401 - Token expired');
-  err.name = 'ShopifyAPIError';
-  monitoring.captureException(err, {
-    shop_domain: 'sentry-test.myshopify.com',
-    route: '/api/debug/sentry-shopify-test',
-    error_type: 'ShopifyAPIError'
-  });
-  res.json({ ok: true, sent_to_sentry: true });
-});
-
 // Force re-auth: redirects store through OAuth to get fresh expiring token
 app.get('/api/auth/reauth', (req, res) => {
   if (!checkDebugKey(req, res)) return;
