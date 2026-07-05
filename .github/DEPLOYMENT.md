@@ -12,7 +12,9 @@ Development  →  Staging  →  Production
   syntax checks + full automated test suite against an ephemeral Postgres container.
   **Confirmed passing**: 22/22 tests green on the first real run after the token/workflow-scope
   fix (GitHub Actions run history has the record).
-- ✅ `staging` branch exists on GitHub, currently identical to `main`.
+- ✅ `staging` branch exists on GitHub, fast-forwarded to match `main` exactly (was 3 commits
+  behind, updated as part of this check — a plain git ref update, no production database touched).
+  CI confirmed triggering on pushes to `staging` too.
 - ❌ No staging Railway service exists yet — this repo change alone can't create one (needs
   Railway dashboard access). See "Setting up the staging Railway service" below.
 - ⚠️ CI passing does **not** currently block a bad deploy to production — see
@@ -39,14 +41,36 @@ dashboard, not something this repo change can do):**
 2. Give it its own Postgres database (Railway → Add Database → Postgres) — **never point staging
    at the production database**, since `shop/redact`, refund creation, etc. would then act on
    real merchant data.
-3. Set the same environment variables as production (`SHOPIFY_CLIENT_ID`,
-   `SHOPIFY_APP_SHARED_SECRET`, `RESEND_API_KEY`, `CREDENTIAL_ENCRYPTION_KEY`, `DEBUG_KEY`) but
-   with `APP_URL` pointing at the staging service's own Railway URL, and ideally a **separate
-   Shopify dev app / dev store** for OAuth testing so staging installs never touch a real
-   merchant's store.
+3. Set environment variables (full list below) — with `APP_URL` pointing at the staging service's
+   own Railway URL, and ideally a **separate Shopify dev app / dev store** for OAuth testing so
+   staging installs never touch a real merchant's store.
 4. No code changes are required for this to work — the app already reads every config value from
-   `process.env` (confirmed while auditing `server/index.js`), so a second Railway service with
-   its own env vars just works.
+   `process.env` (confirmed by grepping `server/index.js` for every `process.env.*` reference),
+   and the only hardcoded `goreturn.pro` references in the code are `||` fallback defaults that
+   never trigger once `APP_URL`/`EMAIL_FROM` are set — so a second Railway service with its own
+   env vars just works, no code branch needed.
+
+**Complete list of environment variables the app reads** (compiled by grepping
+`server/index.js`, `server/logistics-providers.js`, `server/restore-backup.js` for every
+`process.env.*` reference):
+
+| Variable | Purpose | Staging value |
+|---|---|---|
+| `DATABASE_URL` | Postgres connection string | Staging's own Postgres — **never** the production DB URL |
+| `APP_URL` | Used for OAuth redirect URLs, CORS allowlist, CSP, email links | Staging Railway service's own URL |
+| `SHOPIFY_CLIENT_ID` | Shopify app API key | Ideally a **separate Shopify dev app**, not the production app's key |
+| `SHOPIFY_APP_SHARED_SECRET` | Shopify app secret (HMAC/OAuth verification) | Matches whichever Shopify app `SHOPIFY_CLIENT_ID` above belongs to |
+| `CREDENTIAL_ENCRYPTION_KEY` | AES-256-GCM key for encrypting stored Shopify tokens | Generate a **new, separate** 64-char hex key — do not reuse production's key |
+| `RESEND_API_KEY` | Transactional email sending | Can reuse production's Resend account, or a separate one to keep staging emails visually distinct |
+| `EMAIL_FROM` | From-address for outgoing email | Something like `GoReturn Staging <noreply@staging.goreturn.pro>` to avoid confusing real merchants |
+| `DEBUG_KEY` | Gates `/api/debug/*` routes | Generate a separate value, don't reuse production's |
+| `NODE_ENV` | Controls SSL mode for the DB connection, cookie/security defaults | `production` (staging should mirror prod behavior, just with its own data) |
+| `PORT` | Server listen port | Railway sets this automatically — don't set manually |
+| `SHIPROCKET_EMAIL` / `SHIPROCKET_PASSWORD` | Shiprocket courier API login | Only needed if testing logistics integration on staging; a sandbox/test Shiprocket account if available, otherwise omit (logistics features will just be unavailable on staging) |
+
+**Do NOT** point staging's `DATABASE_URL` at the production database under any circumstance —
+`shop/redact`, refund creation, team-member deletion, and the billing-sync downgrade sweep all
+write real data, and staging is explicitly for testing those paths without consequence.
 
 **Using it:**
 1. Merge/push to `staging` → CI runs → Railway auto-deploys staging (once the service above
