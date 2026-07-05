@@ -7,7 +7,6 @@ const fetch = require('node-fetch');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 
-let lastEmailError = '';
 let lastExchange = { stage: 'none' };
 let webhookFailureCount = 0; // counts genuine webhook processing failures (500s) since boot — exposed via /api/health for at-a-glance background-job health
 
@@ -34,67 +33,9 @@ process.on('unhandledRejection', (err) => alertCrash('Unhandled Rejection', err)
 // AES-256-GCM encryption for sensitive credentials (Shiprocket passwords) stored in DB.
 // Extracted to server/lib/crypto.js (Batch 4 Step 1a) — behavior unchanged, verbatim move.
 const { encryptCredential, decryptCredential } = require('./lib/crypto');
-// Email throttle to prevent spam: max 3 emails per return per hour
-const emailThrottle = {};
-function canSendEmail(returnId, toEmail) {
-  const key = `${returnId}:${toEmail}`;
-  const now = Date.now();
-  const sent = emailThrottle[key] || [];
-  // Remove entries older than 1 hour
-  emailThrottle[key] = sent.filter(t => now - t < 60 * 60 * 1000);
-  if (emailThrottle[key].length >= 3) return false;
-  emailThrottle[key].push(now);
-  return true;
-}
-
-async function sendEmail(to, subject, html, attachments, returnId) {
-  if (!process.env.RESEND_API_KEY) { lastEmailError = 'RESEND_API_KEY not set'; console.log(lastEmailError); return false; }
-  // Throttle emails per return (prevent spam)
-  if (returnId && !canSendEmail(returnId, to)) {
-    console.log('Email throttled for return', returnId);
-    return false;
-  }
-  const body = { from: process.env.EMAIL_FROM || 'GoReturn <noreply@goreturn.pro>', to: [to], subject, html };
-  if (attachments && attachments.length) body.attachments = attachments;
-  // Retry transient failures (network error, 429, 5xx) with short backoff — same pattern as
-  // shopifyFetch elsewhere in this file, just fewer/shorter retries since this runs inline in
-  // request handlers and shouldn't add much latency. Previously a single transient blip meant a
-  // customer never got their return-status email at all, with no second attempt.
-  const maxRetries = 2;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const r = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
-        body: JSON.stringify(body)
-      });
-      const d = await r.json();
-      if (!r.ok || d.error) {
-        lastEmailError = d.message || d.error?.message || 'Send failed';
-        if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) {
-          console.log(`Email transient error (attempt ${attempt + 1}/${maxRetries + 1}):`, lastEmailError);
-          await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
-          continue;
-        }
-        console.log('Email error:', lastEmailError);
-        return false;
-      }
-      console.log('Email sent to:', to, 'id:', d.id);
-      lastEmailError = '';
-      return true;
-    } catch(e) {
-      lastEmailError = e.message;
-      if (attempt < maxRetries) {
-        console.log(`Email network error (attempt ${attempt + 1}/${maxRetries + 1}):`, e.message);
-        await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
-        continue;
-      }
-      console.log('Email error:', e.message);
-      return false;
-    }
-  }
-  return false;
-}
+// Email sending + admin alerting. Extracted to server/lib/email.js (Batch 4 Step 1b) —
+// behavior unchanged, verbatim move.
+const { sendEmail, notifyAdmin, getLastEmailError, ALLOWED_ADMIN_EMAIL } = require('./lib/email');
 
 function returnStatusEmail(customerName, orderId, status, amount, extra) {
   const e = extra || {};
@@ -643,19 +584,7 @@ async function requireShopAccess(req, res, next) {
   } catch(e) { return res.status(500).json({ error: 'Auth check failed' }); }
 }
 
-const ALLOWED_ADMIN_EMAIL = 'ajeetkumar.saas@gmail.com';
-
-// Send an alert email to the app owner/admin (install, uninstall, etc.)
-async function notifyAdmin(subject, bodyHtml) {
-  try {
-    await sendEmail(ALLOWED_ADMIN_EMAIL,
-      subject,
-      `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
-        <div style="text-align:center;padding:16px;background:#4F46E5;color:white;border-radius:8px 8px 0 0"><h2 style="margin:0;font-size:18px">GoReturn Admin Alert</h2></div>
-        <div style="padding:24px;border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;color:#374151;font-size:14px">${bodyHtml}</div>
-      </div>`);
-  } catch(e) { console.log('notifyAdmin error:', e.message); }
-}
+// ALLOWED_ADMIN_EMAIL and notifyAdmin() now imported from ./lib/email (Batch 4 Step 1b).
 
 // Admin Registration (locked to owner email only)
 app.post('/api/admin/register', async (req, res) => {
@@ -719,7 +648,7 @@ app.post('/api/admin/login', async (req, res) => {
   const otp = generateOTP();
   otpStore[email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
   const sent = await sendEmail(email, 'Your GoReturn Login Code', otpEmailHtml(otp, user.name));
-  if (!sent) return res.status(500).json({ error: 'Email failed: ' + (lastEmailError || 'Unknown error') });
+  if (!sent) return res.status(500).json({ error: 'Email failed: ' + (getLastEmailError() || 'Unknown error') });
   res.json({ ok: true, otpSent: true, message: 'OTP sent to ' + email });
 });
 
@@ -775,7 +704,7 @@ app.post('/api/admin/forgot-password', async (req, res) => {
   const otp = generateOTP();
   otpStore['reset_' + email] = { otp, userType, userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
   const sent = await sendEmail(email, 'GoReturn Password Reset OTP - ' + otp, otpEmailHtml(otp, user.name));
-  if (!sent) return res.status(500).json({ error: 'Email failed: ' + (lastEmailError || 'Unknown error') });
+  if (!sent) return res.status(500).json({ error: 'Email failed: ' + (getLastEmailError() || 'Unknown error') });
   res.json({ ok: true, message: 'Reset OTP sent to ' + email });
 });
 
@@ -2920,7 +2849,7 @@ app.post('/api/webhooks/app-uninstalled', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: lastEmailError || 'none', last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot', webhook_failures_since_boot: webhookFailureCount }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: getLastEmailError() || 'none', last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot', webhook_failures_since_boot: webhookFailureCount }));
 
 // Debug/support endpoints — gated by a dedicated DEBUG_KEY env var (never hardcoded, never the
 // same secret used anywhere else). Fails CLOSED: if DEBUG_KEY isn't set in the environment, these
