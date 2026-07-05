@@ -2767,28 +2767,10 @@ app.get('/api/debug/shop-check', async (req, res) => {
   } catch(e) { res.json({ store: sr.rows[0], error: e.message }); }
 });
 
-app.get('/', async (req, res) => {
-  const shop = req.query.shop;
-  if (shop) {
-    // Shopify embedded app (seller view) - separate file so admin dashboard changes never affect it
-    return res.sendFile(path.join(__dirname, '../client/build/embedded.html'));
-  }
-  res.sendFile(path.join(__dirname, '../client/build/landing.html'));
-});
-app.get('/login', (req, res) => res.sendFile(path.join(__dirname, '../client/build/login.html')));
-app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, '../client/build/index.html')));
-app.get('/return', (req, res) => res.sendFile(path.join(__dirname, '../client/build/return.html')));
-app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '../client/build/privacy.html')));
-
-app.use(express.static(path.join(__dirname, '../client/build'), { index: false }));
-
-app.get('*', (req, res) => {
-  // Any unmatched deep link: route by whether it's the Shopify embedded context (?shop=) or admin
-  if (req.query.shop) {
-    return res.sendFile(path.join(__dirname, '../client/build/embedded.html'));
-  }
-  res.sendFile(path.join(__dirname, '../client/build/index.html'));
-});
+// Static page-serving routes extracted to server/routes/staticPages.js (Batch 4 Step 2, Group 1)
+// — behavior unchanged, verbatim move. Registered here at the exact same point in the route
+// order as before (the catch-all '*' inside it must stay last).
+require('./routes/staticPages').registerStaticPageRoutes(app);
 
 // ===== AUTOMATIC DATA BACKUP =====
 // Protects against losing all data if the Railway database is ever corrupted, deleted, or the
