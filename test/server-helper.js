@@ -17,8 +17,16 @@ const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
 
 function assertNotProductionDb(url) {
   if (!url) throw new Error('TEST_DATABASE_URL or DATABASE_URL must be set to run these tests (point it at a throwaway/CI database, never production).');
-  if (/goreturn|railway\.app.*prod/i.test(url)) {
-    throw new Error('Refusing to run tests against what looks like a production database URL. Use a throwaway test database.');
+  // Check the HOST specifically, not the whole connection string — a substring check on the
+  // full URL (e.g. matching "goreturn" anywhere) false-positives on a deliberately-named
+  // throwaway CI database like postgres://test:test@localhost:5432/goreturn_test, which is
+  // exactly what broke the first CI run. localhost/127.0.0.1 and the CI service alias
+  // "postgres" are always safe regardless of what the database itself is named.
+  let host;
+  try { host = new URL(url).hostname; } catch (e) { host = url; }
+  const isLocal = ['localhost', '127.0.0.1', 'postgres'].includes(host);
+  if (!isLocal && /railway\.app|rlwy\.net/i.test(host)) {
+    throw new Error(`Refusing to run tests against what looks like a production database host (${host}). Use a throwaway test database.`);
   }
 }
 
