@@ -5,7 +5,6 @@ const path = require('path');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const bcrypt = require('bcryptjs');
-const { Pool } = require('pg');
 
 let lastExchange = { stage: 'none' };
 let webhookFailureCount = 0; // counts genuine webhook processing failures (500s) since boot — exposed via /api/health for at-a-glance background-job health
@@ -173,20 +172,10 @@ app.use('/api/team', rateLimit(30, 60 * 1000)); // team invite/edit/delete had n
 app.use('/api/billing/create', rateLimitByShop(10, 60 * 1000)); // each call creates a real pending Shopify charge — cap spam-creation per shop
 app.use('/api/upload-image', rateLimitByShop(60, 60 * 1000)); // storage-exhaustion guard noted in the earlier audit — generous enough that multiple customers uploading return photos simultaneously won't hit it, just blocks obvious abuse
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 10, // explicit (matches pg's own default) — documents the intended ceiling rather than relying on an implicit default
-  idleTimeoutMillis: 30000, // recycle idle clients instead of holding them open indefinitely
-  connectionTimeoutMillis: 5000 // fail fast if the DB is unreachable instead of hanging the request
-});
-// REQUIRED by node-postgres: an idle client hitting a network-level error (e.g. the DB connection
-// dropping) emits 'error' on the Pool itself. With no listener, Node treats this as an uncaught
-// EventEmitter error and can crash the whole process — this had no handler at all before now.
-pool.on('error', (err) => {
-  console.error('Unexpected idle Postgres client error:', err.message);
-  notifyAdmin('🚨 GoReturn Database Connection Error', `<p>An idle database connection errored unexpectedly: ${err.message}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
-});
+// Postgres pool. Extracted to server/lib/db.js (Batch 4 Step 1c) — behavior unchanged, verbatim
+// move (including the pool.on('error') handler). require() caches modules, so this is the same
+// singleton Pool instance everywhere it's required.
+const pool = require('./lib/db');
 
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_APP_SHARED_SECRET;
