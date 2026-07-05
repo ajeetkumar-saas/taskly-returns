@@ -907,6 +907,12 @@ app.get('/api/debug/last-exchange', (req, res) => {
   res.json(lastExchange);
 });
 
+// TEMPORARY TEST ROUTE FOR SENTRY VERIFICATION (will be removed after verification)
+app.get('/api/debug/sentry-test', (req, res) => {
+  if (!checkDebugKey(req, res)) return;
+  throw new Error('Sentry production verification test');
+});
+
 // Force re-auth: redirects store through OAuth to get fresh expiring token
 app.get('/api/auth/reauth', (req, res) => {
   if (!checkDebugKey(req, res)) return;
