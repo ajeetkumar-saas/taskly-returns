@@ -577,12 +577,8 @@ app.get('/api/auth/callback', async (req, res) => {
 });
 
 // Billing
-const PLANS = {
-  free: { name: 'Free', price: 0, returns: 5, trial_days: 0 },
-  starter: { name: 'Starter', price: 11.99, returns: 50, trial_days: 15 },
-  growth: { name: 'Growth', price: 23.99, returns: 150, trial_days: 15 },
-  pro: { name: 'Pro', price: 47.99, returns: 500, trial_days: 15 }
-};
+// PLANS extracted to server/lib/plans.js (Batch 4 Step 2, preparatory) — behavior unchanged.
+const { PLANS } = require('./lib/plans');
 
 app.get('/api/billing/create', async (req, res) => {
   const { shop, plan } = req.query;
