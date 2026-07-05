@@ -838,7 +838,36 @@ app.delete('/api/locations/:id', requireShopAccess, async (req, res) => {
 const { registerWebhookRoutes, getWebhookFailureCount } = require('./routes/webhooks');
 registerWebhookRoutes(app);
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: '3.6.0-features', shiprocket: !!process.env.SHIPROCKET_EMAIL, email: !!process.env.RESEND_API_KEY, last_email_error: getLastEmailError() || 'none', last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot', webhook_failures_since_boot: getWebhookFailureCount() }));
+// Batch 5 Part 3: previously this never actually touched the database — it was a static
+// process-state response, so if Postgres were down this would still report ok:true and an
+// uptime monitor would see a healthy 200. Added a real, lightweight `SELECT 1` with a 3s
+// timeout so `database` genuinely reflects connectivity. All previously-existing fields are
+// unchanged (additive only) — no existing consumer of this response is affected.
+app.get('/api/health', async (req, res) => {
+  let database = { connected: false, latency_ms: null };
+  try {
+    const start = Date.now();
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('DB health check timeout')), 3000))
+    ]);
+    database = { connected: true, latency_ms: Date.now() - start };
+  } catch(e) {
+    database = { connected: false, error: e.message };
+  }
+  const overallOk = database.connected;
+  res.status(overallOk ? 200 : 503).json({
+    ok: overallOk,
+    version: '3.6.0-features',
+    database,
+    shiprocket: !!process.env.SHIPROCKET_EMAIL,
+    email: !!process.env.RESEND_API_KEY,
+    monitoring: monitoring.isEnabled(),
+    last_email_error: getLastEmailError() || 'none',
+    last_successful_backup: lastSuccessfulBackupAt || 'none yet this boot',
+    webhook_failures_since_boot: getWebhookFailureCount()
+  });
+});
 
 // Debug/support endpoints — gated by a dedicated DEBUG_KEY env var (never hardcoded, never the
 // same secret used anywhere else). Fails CLOSED: if DEBUG_KEY isn't set in the environment, these
