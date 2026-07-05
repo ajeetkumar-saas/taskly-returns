@@ -19,6 +19,7 @@ const CRASH_ALERT_THROTTLE_MS = 10 * 60 * 1000; // avoid an email storm if somet
 function alertCrash(kind, err) {
   const now = Date.now();
   console.error(`[${kind}]`, err);
+  monitoring.captureException(err instanceof Error ? err : new Error(String(err)), { error_type: kind });
   if (now - lastCrashAlertAt < CRASH_ALERT_THROTTLE_MS) return;
   lastCrashAlertAt = now;
   try {
@@ -27,6 +28,10 @@ function alertCrash(kind, err) {
 }
 process.on('uncaughtException', (err) => alertCrash('Uncaught Exception', err));
 process.on('unhandledRejection', (err) => alertCrash('Unhandled Rejection', err));
+
+// Production error monitoring (Sentry) — Batch 5 Part 2. Gracefully disables itself if
+// SENTRY_DSN isn't set (see server/lib/monitoring.js); every call here is safe unconditionally.
+const monitoring = require('./lib/monitoring');
 
 // AES-256-GCM encryption for sensitive credentials (Shiprocket passwords) stored in DB.
 // Extracted to server/lib/crypto.js (Batch 4 Step 1a) — behavior unchanged, verbatim move.
@@ -40,6 +45,7 @@ const { sendEmail, notifyAdmin, getLastEmailError, ALLOWED_ADMIN_EMAIL } = requi
 const { returnStatusEmail, DEFAULT_EMAIL_TEMPLATES, getEmailTemplates, fillPlaceholders } = require('./lib/emailTemplates');
 
 const app = express();
+monitoring.initMonitoring(app);
 // All real API calls in this app are same-origin (pages served by goreturn.pro calling its own
 // /api/* routes) — there's no legitimate cross-origin fetch use case, so CORS is restricted to
 // the app's own domain and Shopify's admin (covers the embedded App Bridge context) instead of
@@ -1041,6 +1047,11 @@ app.post('/api/admin/backup-now', requireOwner, async (req, res) => {
   const result = await runDataBackup(true);
   res.json(result);
 });
+
+// Catches any error that reaches Express's default error handling (a route that threw without
+// its own try/catch) — records it to Sentry (no-op if not configured) with route/shop context,
+// then hands off to next(err) so existing behavior (Express's default 500 response) is unchanged.
+app.use(monitoring.expressErrorHandler());
 
 const PORT = process.env.PORT || 3001;
 initDB().then(() => {

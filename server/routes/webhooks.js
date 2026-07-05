@@ -7,6 +7,7 @@
 const pool = require('../lib/db');
 const { sendEmail, notifyAdmin, ALLOWED_ADMIN_EMAIL } = require('../lib/email');
 const { verifyShopifyHmac } = require('../lib/shopify');
+const monitoring = require('../lib/monitoring');
 
 // Counts genuine webhook processing failures (500s) since boot — was a bare module-level `let`
 // in index.js, read directly by /api/health. Exported as a getter here (same pattern as
@@ -47,6 +48,7 @@ function registerWebhookRoutes(app) {
       // retry to recover it. Return 500 so Shopify retries, and alert immediately instead of
       // only a console.log nobody sees.
       console.log('orders/refunds/create webhook error:', e.message);
+      monitoring.captureException(e, { route: '/api/webhooks/shopify/refunds-create', shop_domain: req.headers['x-shopify-shop-domain'], error_type: 'webhook_failure' });
       notifyAdmin('🚨 GoReturn Webhook Failure (refunds/create)', `<p>Error: ${e.message}</p><p>Shop: ${req.headers['x-shopify-shop-domain']||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
       webhookFailureCount++; return res.status(500).send('Internal error — please retry');
     }
@@ -73,6 +75,7 @@ function registerWebhookRoutes(app) {
       // GDPR compliance webhook — a swallowed failure here previously still reported success,
       // preventing Shopify's retry from giving us a second chance to actually process the request.
       console.log('data_request error:', e.message);
+      monitoring.captureException(e, { route: '/api/webhooks/customers/data_request', shop_domain: req.body?.shop_domain, error_type: 'gdpr_webhook_failure' });
       notifyAdmin('🚨 GoReturn GDPR Webhook Failure (data_request)', `<p>Error: ${e.message}</p><p>Shop: ${req.body?.shop_domain||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
       webhookFailureCount++; return res.status(500).send('Internal error — please retry');
     }
@@ -97,6 +100,7 @@ function registerWebhookRoutes(app) {
       // both a data-loss risk (retry never happens) and a compliance risk (PII not actually
       // scrubbed despite Shopify believing it was).
       console.log('customers/redact error:', e.message);
+      monitoring.captureException(e, { route: '/api/webhooks/customers/redact', shop_domain: req.body?.shop_domain, error_type: 'gdpr_webhook_failure' });
       notifyAdmin('🚨 GoReturn GDPR Webhook Failure (customers/redact)', `<p>Error: ${e.message}</p><p>Shop: ${req.body?.shop_domain||'unknown'}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
       webhookFailureCount++; return res.status(500).send('Internal error — please retry');
     }
@@ -120,6 +124,7 @@ function registerWebhookRoutes(app) {
       await attempt('shopify_stores', 'DELETE FROM shopify_stores WHERE shop_domain = $1');
       if (failures.length) {
         console.log('shop/redact partial failure:', failures);
+        monitoring.captureMessage(`shop/redact partial failure: ${failures.join('; ')}`, { route: '/api/webhooks/shop/redact', shop_domain: shopDomain, error_type: 'gdpr_webhook_failure' });
         notifyAdmin('🚨 GoReturn GDPR Webhook Failure (shop/redact)', `<p>Shop: ${shopDomain}</p><ul>${failures.map(f => `<li>${f}</li>`).join('')}</ul><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
         webhookFailureCount++; return res.status(500).send('Internal error — please retry');
       }
@@ -141,6 +146,7 @@ function registerWebhookRoutes(app) {
         // Not GDPR-critical like shop/redact, but still worth Shopify retrying and us knowing —
         // previously this failure was silently swallowed and still reported as success.
         console.log('app-uninstalled delete error:', e.message);
+        monitoring.captureException(e, { route: '/api/webhooks/app-uninstalled', shop_domain: shopDomain, error_type: 'webhook_failure' });
         notifyAdmin('🚨 GoReturn Webhook Failure (app-uninstalled)', `<p>Failed to clean up ${shopDomain}: ${e.message}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
         webhookFailureCount++; return res.status(500).send('Internal error — please retry');
       }

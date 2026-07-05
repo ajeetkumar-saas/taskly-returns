@@ -6,6 +6,7 @@
 
 const { Pool } = require('pg');
 const { notifyAdmin } = require('./email');
+const monitoring = require('./monitoring');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -19,6 +20,7 @@ const pool = new Pool({
 // EventEmitter error and can crash the whole process — this had no handler at all before now.
 pool.on('error', (err) => {
   console.error('Unexpected idle Postgres client error:', err.message);
+  monitoring.captureException(err, { error_type: 'database_connection_error' });
   notifyAdmin('🚨 GoReturn Database Connection Error', `<p>An idle database connection errored unexpectedly: ${err.message}</p><p>Time: ${new Date().toUTCString()}</p>`).catch(()=>{});
 });
 
