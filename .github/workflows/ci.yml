@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on every push and PR. This does NOT yet block Railway's deploy (Railway deploys on push
+# to main independently of this workflow's result) — see the deployment-safety notes in the
+# accompanying report for what's needed to make this a hard gate, and why that step needs a
+# manual action in the Railway dashboard that this file can't perform on its own.
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: goreturn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Syntax check (server scripts)
+        run: |
+          node -c server/index.js
+          node -c server/logistics-providers.js
+          node -c server/restore-backup.js
+
+      - name: Syntax check (client inline JavaScript)
+        run: node scripts/check-client-syntax.js
+
+      - name: Run test suite
+        env:
+          TEST_DATABASE_URL: postgres://test:test@localhost:5432/goreturn_test
+        run: npm test
