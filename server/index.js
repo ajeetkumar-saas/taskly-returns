@@ -70,6 +70,10 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', `frame-ancestors ${allowShop} https://admin.shopify.com;`);
   res.removeHeader('X-Frame-Options');
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   next();
 });
 app.use(express.json({
@@ -496,16 +500,27 @@ app.get('/api/auth/callback', async (req, res) => {
       await pool.query('UPDATE shopify_stores SET access_token=$1 WHERE shop_domain=$2', [encryptCredential(access_token), shop]).catch(()=>{});
     }
 
-    // Register Shopify webhooks needed for sync (idempotent — Shopify deduplicates by topic+address)
+    // Register Shopify webhooks needed for sync (idempotent — Shopify deduplicates by topic+address).
+    // Note: GDPR webhooks (customers/data_request, customers/redact, shop/redact) are also declared
+    // in shopify.app.toml privacy_compliance section and auto-registered by Shopify, but we register
+    // them explicitly here to ensure they're always set up, even if Shopify's auto-registration fails.
     try {
       const webhookTopics = [
         'refunds/create',
-        'app/uninstalled'
+        'app/uninstalled',
+        'customers/data_request',
+        'customers/redact',
+        'shop/redact'
       ];
+      const webhookUrls = {
+        'refunds/create': `${APP_URL}/api/webhooks/shopify/refunds-create`,
+        'app/uninstalled': `${APP_URL}/api/webhooks/app-uninstalled`,
+        'customers/data_request': `${APP_URL}/api/webhooks/customers/data_request`,
+        'customers/redact': `${APP_URL}/api/webhooks/customers/redact`,
+        'shop/redact': `${APP_URL}/api/webhooks/shop/redact`
+      };
       for (const topic of webhookTopics) {
-        const address = topic === 'app/uninstalled'
-          ? `${APP_URL}/api/webhooks/app/uninstalled`
-          : `${APP_URL}/api/webhooks/shopify/${topic.replace('/', '-')}`;
+        const address = webhookUrls[topic];
         await fetch(`https://${shop}/admin/api/2025-04/webhooks.json`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
