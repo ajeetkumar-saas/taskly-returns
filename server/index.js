@@ -376,16 +376,8 @@ await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_pri
   console.log('DB ready');
 }
 
-async function logActivity(req, action, details) {
-  try {
-    const userName = req.user?.name || 'System';
-    const userEmail = req.user?.email || '';
-    const userRole = req.user?.role || '';
-    const ip = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || '';
-    await pool.query('INSERT INTO activity_log (user_name, user_email, user_role, action, details, ip_address) VALUES ($1,$2,$3,$4,$5,$6)',
-      [userName, userEmail, userRole, action, details || '', ip]);
-  } catch(e) {}
-}
+// Extracted to server/lib/activityLog.js (Batch 4 Step 1d) — behavior unchanged, verbatim move.
+const { logActivity } = require('./lib/activityLog');
 
 // Bcrypt with a per-password random salt for all NEW passwords (replaces the old fast
 // SHA-256 + static-salt scheme, which is weak against brute-force/rainbow-table attacks).
