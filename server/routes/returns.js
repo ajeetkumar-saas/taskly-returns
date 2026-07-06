@@ -198,7 +198,13 @@ function registerReturnRoutes(app) {
     } catch(e) {
       await pool.query('UPDATE returns SET refund_status=$1 WHERE id=$2', ['failed', req.params.id]).catch(()=>{});
       console.log('Refund error:', e.message);
-      res.status(400).json({ error: 'Refund processing failed. Please check Shopify and try again.' });
+      // Surface the specific "no line items" reason to the merchant instead of a generic
+      // message — this return cannot be refunded through Shopify until it has real Shopify
+      // line item data linked to it (see the auto-fill logic in POST /api/returns above).
+      const message = e.message && e.message.includes('No order line items linked')
+        ? 'This return has no Shopify product data linked to it, so a refund cannot be processed automatically. This can happen for older returns created before line-item tracking — please process this refund directly in Shopify Admin instead.'
+        : 'Refund processing failed. Please check Shopify and try again.';
+      res.status(400).json({ error: message });
     }
   });
 
@@ -349,6 +355,13 @@ function registerReturnRoutes(app) {
 
     // Verify order ownership and enforce return window via Shopify API (REQUIRED)
     let shopifyVerified = false;
+    // Line items required for GoReturn to later process a real Shopify refund on this return
+    // (see processShopifyRefund below). The customer return portal already sends these directly
+    // (it lets the customer pick specific products from their order). The merchant dashboard's
+    // manual "Create Return" form does not have a product picker and never sent this — but the
+    // order is already fetched and verified right below for email/window/amount checks, so we
+    // derive line_items from that same real Shopify order data instead of requiring a UI change.
+    let resolvedLineItems = line_items || '';
     try {
       const sr = await getStoreToken(shop_domain);
       if (!sr?.rows?.length) return res.status(503).json({ error: 'Store API token not configured. Contact support.' });
@@ -382,6 +395,23 @@ function registerReturnRoutes(app) {
       if (amount && parseFloat(amount) > orderTotal) {
         return res.status(400).json({ error: 'Refund amount cannot exceed order total' });
       }
+
+      // Auto-fill line_items from the real Shopify order when the caller didn't supply any
+      // (the manual dashboard form). Match by SKU or product name if the merchant entered one,
+      // so the refund targets only that item; otherwise fall back to every line item on the
+      // order — still a legitimate real Shopify refund, just less granular than a customer's
+      // own product selection, and always safe since it's real order data, never fabricated.
+      if (!resolvedLineItems && Array.isArray(order.line_items) && order.line_items.length) {
+        let matched = order.line_items;
+        if (product_sku) {
+          const bySku = order.line_items.filter(li => (li.sku || '').toLowerCase() === String(product_sku).toLowerCase());
+          if (bySku.length) matched = bySku;
+        } else if (product_name) {
+          const byName = order.line_items.filter(li => (li.title || '').toLowerCase() === String(product_name).toLowerCase());
+          if (byName.length) matched = byName;
+        }
+        resolvedLineItems = JSON.stringify(matched.map(li => ({ id: li.id, quantity: li.quantity || 1 })));
+      }
     } catch(verifyErr) {
       console.log('Order verify error:', verifyErr.message);
       return res.status(503).json({ error: 'Shopify verification failed. Please try again later.' });
@@ -390,7 +420,7 @@ function registerReturnRoutes(app) {
     const r = await pool.query(
       `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'',line_items||'']
+      [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'',resolvedLineItems||'']
     );
     if (customer_email) {
       const tpl = await getEmailTemplates(shop_domain);

@@ -28,7 +28,10 @@ function registerBillingRoutes(app) {
             price: planData.price,
             return_url: `${APP_URL}/api/billing/confirm?shop=${shop}&plan=${plan}`,
             trial_days: planData.trial_days,
-            test: process.env.NODE_ENV !== 'production' || shop.includes('test')
+            // Test charges never move real money. Gated purely by NODE_ENV — never by shop
+            // domain content, since a real merchant's store name could legitimately contain
+            // "test" (e.g. a brand name) and would otherwise never be billed.
+            test: process.env.NODE_ENV !== 'production'
           }
         })
       });
@@ -55,12 +58,21 @@ function registerBillingRoutes(app) {
       });
       const data = await r.json();
       const charge = data.recurring_application_charge;
-      if (charge && charge.status === 'accepted') {
-        await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}/activate.json`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
-          body: JSON.stringify({ recurring_application_charge: { id: charge_id } })
-        });
+      // Modern Shopify API versions (2021-01+) transition an approved charge directly from
+      // 'pending' to 'active' — the transient 'accepted' status this code previously checked for
+      // is essentially never observed by the time Shopify redirects back here, which meant a
+      // merchant could approve and pay, then land back on the dashboard with their plan never
+      // actually updated. 'accepted' is kept as a fallback for older/edge-case API responses, but
+      // an already-active charge must also be treated as approved — and must NOT be re-activated
+      // (calling /activate.json on an already-active charge is unnecessary and can error).
+      if (charge && (charge.status === 'active' || charge.status === 'accepted')) {
+        if (charge.status === 'accepted') {
+          await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges/${charge_id}/activate.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
+            body: JSON.stringify({ recurring_application_charge: { id: charge_id } })
+          });
+        }
         // Derive the plan from what the merchant ACTUALLY approved on Shopify (the charge's real
         // price), not the client-supplied ?plan= query param. Trusting the query param would let
         // a merchant approve a cheap plan, then replay this confirm URL with a different ?plan=
