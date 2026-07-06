@@ -265,6 +265,14 @@ await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_pri
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS line_items TEXT DEFAULT ''`);
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_status VARCHAR(20) DEFAULT ''`);
     await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS shopify_refund_id VARCHAR(255) DEFAULT ''`);
+    // Explicit Shopify reference fields for traceability/debugging — additive only, purely
+    // informational. The existing `line_items` JSON blob (line_item id + quantity) remains the
+    // single source of truth processShopifyRefund() actually uses; these columns are never read
+    // by the refund flow, so their absence on legacy rows can never break anything.
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS shopify_line_item_id VARCHAR(255) DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS shopify_product_id VARCHAR(255) DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS shopify_variant_id VARCHAR(255) DEFAULT ''`);
+    await pool.query(`ALTER TABLE returns ADD COLUMN IF NOT EXISTS line_item_price NUMERIC(10,2) DEFAULT 0`);
     await pool.query(`CREATE TABLE IF NOT EXISTS store_settings (
       id SERIAL PRIMARY KEY,
       shop_domain VARCHAR(255) UNIQUE NOT NULL,

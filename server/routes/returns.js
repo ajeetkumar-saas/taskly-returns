@@ -362,6 +362,11 @@ function registerReturnRoutes(app) {
     // order is already fetched and verified right below for email/window/amount checks, so we
     // derive line_items from that same real Shopify order data instead of requiring a UI change.
     let resolvedLineItems = line_items || '';
+    // Explicit Shopify reference fields for traceability/debugging (additive — the refund flow
+    // itself continues to rely solely on resolvedLineItems above, never on these). Populated from
+    // the first resolved line item's match in the real Shopify order data fetched below, for both
+    // the customer-portal path (client already sent real ids) and the dashboard auto-fill path.
+    let shopifyLineItemId = '', shopifyProductId = '', shopifyVariantId = '', lineItemPrice = 0;
     try {
       const sr = await getStoreToken(shop_domain);
       if (!sr?.rows?.length) return res.status(503).json({ error: 'Store API token not configured. Contact support.' });
@@ -419,15 +424,32 @@ function registerReturnRoutes(app) {
           return res.status(400).json({ error: 'Please select a Shopify order item before creating a refundable return.' });
         }
       }
+
+      // Populate the explicit reference columns from the real Shopify order line item —
+      // covers both paths above (customer-portal-supplied ids and dashboard auto-filled ids),
+      // since both end up as a JSON array of {id, quantity} matched against this same order.
+      try {
+        const resolvedArr = JSON.parse(resolvedLineItems || '[]');
+        const firstId = resolvedArr[0]?.id;
+        const matchedOrderItem = firstId && Array.isArray(order.line_items)
+          ? order.line_items.find(li => String(li.id) === String(firstId))
+          : null;
+        if (matchedOrderItem) {
+          shopifyLineItemId = String(matchedOrderItem.id);
+          shopifyProductId = matchedOrderItem.product_id ? String(matchedOrderItem.product_id) : '';
+          shopifyVariantId = matchedOrderItem.variant_id ? String(matchedOrderItem.variant_id) : '';
+          lineItemPrice = parseFloat(matchedOrderItem.price || 0);
+        }
+      } catch(refErr) { /* purely informational fields — never block return creation over these */ }
     } catch(verifyErr) {
       console.log('Order verify error:', verifyErr.message);
       return res.status(503).json({ error: 'Shopify verification failed. Please try again later.' });
     }
 
     const r = await pool.query(
-      `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'',resolvedLineItems||'']
+      `INSERT INTO returns (order_id,order_number,customer_name,customer_email,customer_phone,product_name,product_sku,quantity,reason,reason_detail,refund_method,amount,shop_domain,type,exchange_product,exchange_variant,images,line_items,shopify_line_item_id,shopify_product_id,shopify_variant_id,line_item_price)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
+      [order_id||'',order_number||'',customer_name||'',customer_email||'',customer_phone||'',product_name||'',product_sku||'',quantity||1,reason||'',reason_detail||'',refund_method||'original',amount||0,shop_domain||'',type||'return',exchange_product||'',exchange_variant||'',images||'',resolvedLineItems||'',shopifyLineItemId,shopifyProductId,shopifyVariantId,lineItemPrice]
     );
     if (customer_email) {
       const tpl = await getEmailTemplates(shop_domain);
