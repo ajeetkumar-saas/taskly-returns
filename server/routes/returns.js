@@ -397,20 +397,27 @@ function registerReturnRoutes(app) {
       }
 
       // Auto-fill line_items from the real Shopify order when the caller didn't supply any
-      // (the manual dashboard form). Match by SKU or product name if the merchant entered one,
-      // so the refund targets only that item; otherwise fall back to every line item on the
-      // order — still a legitimate real Shopify refund, just less granular than a customer's
-      // own product selection, and always safe since it's real order data, never fabricated.
-      if (!resolvedLineItems && Array.isArray(order.line_items) && order.line_items.length) {
-        let matched = order.line_items;
+      // (the manual dashboard form — the customer return portal always sends real line_items
+      // directly, so resolvedLineItems is already non-empty there and this block never runs).
+      //
+      // Fail-safe by design: an unmatched SKU/name, or no identifying field at all, must NEVER
+      // silently fall back to "every item on the order" — that previously allowed a refund for
+      // one small item to silently expand into a refund for the customer's entire order. Every
+      // path below either resolves to the exact matching item(s) or rejects return creation with
+      // a clear error; there is no fallback that guesses.
+      if (!resolvedLineItems) {
+        const items = Array.isArray(order.line_items) ? order.line_items : [];
         if (product_sku) {
-          const bySku = order.line_items.filter(li => (li.sku || '').toLowerCase() === String(product_sku).toLowerCase());
-          if (bySku.length) matched = bySku;
+          const bySku = items.filter(li => (li.sku || '').toLowerCase() === String(product_sku).toLowerCase());
+          if (!bySku.length) return res.status(400).json({ error: 'Product SKU does not match this Shopify order.' });
+          resolvedLineItems = JSON.stringify(bySku.map(li => ({ id: li.id, quantity: li.quantity || 1 })));
         } else if (product_name) {
-          const byName = order.line_items.filter(li => (li.title || '').toLowerCase() === String(product_name).toLowerCase());
-          if (byName.length) matched = byName;
+          const byName = items.filter(li => (li.title || '').toLowerCase() === String(product_name).toLowerCase());
+          if (!byName.length) return res.status(400).json({ error: 'Product name does not match this Shopify order.' });
+          resolvedLineItems = JSON.stringify(byName.map(li => ({ id: li.id, quantity: li.quantity || 1 })));
+        } else {
+          return res.status(400).json({ error: 'Please select a Shopify order item before creating a refundable return.' });
         }
-        resolvedLineItems = JSON.stringify(matched.map(li => ({ id: li.id, quantity: li.quantity || 1 })));
       }
     } catch(verifyErr) {
       console.log('Order verify error:', verifyErr.message);
