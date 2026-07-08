@@ -83,8 +83,14 @@ function initMonitoring(app) {
 // Attaches request-id + shop_domain context and reports the error, then calls next(err) so
 // Express's own error handling (and any route-specific catch blocks) still runs unchanged —
 // this only ever adds observability, never alters response behavior.
+//
+// Exception: URIError (malformed request path, e.g. /%c0) is thrown by Express's own router
+// during decodeURIComponent — always external bot/scanner noise, never a real app bug, and
+// never reaches any route handler. Short-circuited here with a plain 400 before Sentry capture
+// so it doesn't pollute error monitoring; every other error type is unaffected.
 function expressErrorHandler() {
   return (err, req, res, next) => {
+    if (err instanceof URIError) return res.status(400).send('Bad Request');
     captureException(err, {
       route: req.path,
       method: req.method,
