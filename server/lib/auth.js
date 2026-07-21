@@ -30,9 +30,14 @@ async function authenticateRequest(req, res, next) {
   const token = req.headers['x-auth-token'];
   if (!token) return res.status(401).json({ error: 'Login required' }); // no token at all is routine (not-yet-logged-in UI checks) — not worth logging
   const admin = await pool.query('SELECT * FROM admin_users WHERE session_token=$1', [token]);
-  if (admin.rows.length > 0) { req.user = admin.rows[0]; return next(); }
+  // isPlatformOwner is set ONLY here, from which table actually matched — never derived from
+  // req.user.role. team_members rows can also legitimately have role='owner' (a merchant's own
+  // top-tier team role, unrelated to platform-wide access), and comparing role strings alone
+  // previously let a shop's own 'owner'-role team member satisfy the same check as the real
+  // platform admin, bypassing shop_domain scoping entirely across every other merchant's data.
+  if (admin.rows.length > 0) { req.user = admin.rows[0]; req.user.isPlatformOwner = true; return next(); }
   const member = await pool.query('SELECT * FROM team_members WHERE session_token=$1', [token]);
-  if (member.rows.length > 0) { req.user = member.rows[0]; return next(); }
+  if (member.rows.length > 0) { req.user = member.rows[0]; req.user.isPlatformOwner = false; return next(); }
   // A token WAS supplied but matched no active session — more suspicious than simply being
   // logged out (expired/tampered/guessed token), worth a trace.
   await logActivity(req, 'Invalid Session Token', `${req.method} ${req.path}`);

@@ -9,6 +9,10 @@ const { hashPassword, verifyPassword, authenticateRequest } = require('../lib/au
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3001';
 
+// Valid shop-scoped team roles. Enforced on invite and on role edit so a caller can never write
+// an arbitrary string into team_members.role.
+const ALLOWED_TEAM_ROLES = ['owner', 'admin', 'viewer'];
+
 // OTP store (in-memory, expires in 5 min)
 const otpStore = {};
 
@@ -175,9 +179,10 @@ function registerAdminAuthRoutes(app) {
   // Team Members CRUD
   app.get('/api/team', authenticateRequest, async (req, res) => {
     // Platform owner (admin_users) sees everyone; a shop's own admin/viewer (team_members) must
-    // only see their OWN shop's team — this previously had no shop_domain filter at all, meaning
-    // any team member of any shop could list every other shop's team members' names/emails/roles.
-    const members = req.user.role === 'owner'
+    // only see their OWN shop's team. isPlatformOwner is set only from which table actually
+    // matched in authenticateRequest — never from req.user.role, since a merchant's own team
+    // member can legitimately have role='owner' too (a shop-scoped role, not platform-wide).
+    const members = req.user.isPlatformOwner
       ? await pool.query('SELECT id, name, email, role, status, last_login, created_at FROM team_members ORDER BY created_at DESC')
       : await pool.query('SELECT id, name, email, role, status, last_login, created_at FROM team_members WHERE shop_domain=$1 ORDER BY created_at DESC', [req.user.shop_domain]);
     res.json(members.rows);
@@ -188,10 +193,13 @@ function registerAdminAuthRoutes(app) {
     const { name, email, role, shop_domain } = req.body;
     // A shop-scoped admin can only invite members to their OWN shop — without this, an admin
     // for Shop A could add a team member to any OTHER shop just by passing its domain here.
-    if (req.user.role !== 'owner' && shop_domain !== req.user.shop_domain) {
+    if (!req.user.isPlatformOwner && shop_domain !== req.user.shop_domain) {
       return res.status(403).json({ error: 'Cannot add team members to a different store' });
     }
     if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
+    if (role && !ALLOWED_TEAM_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${ALLOWED_TEAM_ROLES.join(', ')}` });
+    }
     try {
       const inviteToken = crypto.randomBytes(24).toString('hex');
       const r = await pool.query(
@@ -251,9 +259,14 @@ function registerAdminAuthRoutes(app) {
   app.patch('/api/team/:id', authenticateRequest, async (req, res) => {
     if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can edit members' });
     const { name, role, password } = req.body;
-    // Scope by shop_domain unless the caller is the platform owner — otherwise a shop-scoped admin
-    // could edit/reset the password of a team member belonging to a DIFFERENT shop by guessing ids.
-    const shopFilter = req.user.role === 'owner' ? null : req.user.shop_domain;
+    if (role && !ALLOWED_TEAM_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${ALLOWED_TEAM_ROLES.join(', ')}` });
+    }
+    // Scope by shop_domain unless the caller is the REAL platform owner (isPlatformOwner, set only
+    // from admin_users — never from a role string, since a shop's own team member can legitimately
+    // have role='owner' too without being platform-wide) — otherwise a shop-scoped admin could
+    // edit/reset the password of a team member belonging to a DIFFERENT shop by guessing ids.
+    const shopFilter = req.user.isPlatformOwner ? null : req.user.shop_domain;
     const target = await pool.query('SELECT shop_domain FROM team_members WHERE id=$1', [req.params.id]);
     if (!target.rows.length) return res.status(404).json({ error: 'Member not found' });
     if (shopFilter && target.rows[0].shop_domain !== shopFilter) return res.status(404).json({ error: 'Member not found' });
@@ -265,7 +278,7 @@ function registerAdminAuthRoutes(app) {
 
   app.delete('/api/team/:id', authenticateRequest, async (req, res) => {
     if (req.user.role !== 'owner' && req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove members' });
-    const shopFilter = req.user.role === 'owner' ? null : req.user.shop_domain;
+    const shopFilter = req.user.isPlatformOwner ? null : req.user.shop_domain;
     const m = await pool.query('SELECT name, email, shop_domain FROM team_members WHERE id=$1', [req.params.id]);
     if (!m.rows.length) return res.status(404).json({ error: 'Member not found' });
     if (shopFilter && m.rows[0].shop_domain !== shopFilter) return res.status(404).json({ error: 'Member not found' });
