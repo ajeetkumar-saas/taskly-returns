@@ -40,9 +40,16 @@ function registerBillingRoutes(app) {
       if (charge && charge.confirmation_url) {
         res.redirect(charge.confirmation_url);
       } else {
+        // Shopify responded but didn't return a usable charge — log the raw response so this
+        // is diagnosable instead of a silent, unexplained redirect back to the settings page.
+        console.log('billing/create: no confirmation_url in Shopify response:', JSON.stringify(data));
         res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
       }
     } catch(e) {
+      // Previously swallowed silently — merchants (and reviewers) landed back on this page with
+      // no way to know why, and we had no way to diagnose it either. Logging only; no behavior
+      // change to the response itself.
+      console.log('billing/create error:', e.message);
       res.redirect(`/?shop=${shop}&connected=true&billing=error`);
     }
   });
