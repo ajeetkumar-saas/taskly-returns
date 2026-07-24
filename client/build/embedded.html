@@ -2264,12 +2264,14 @@ function canAccess(page) {
 }
 function upgradeToPlan(plan) {
   if (!currentShop) return showAlert("Store not detected", "error");
-  var url = "/api/billing/create?shop=" + encodeURIComponent(currentShop) + "&plan=" + plan;
-  // Shopify's billing approval page refuses to render inside our app's iframe (by design, to
-  // prevent clickjacking a merchant into approving a charge). A same-frame location.href here
-  // never reaches Shopify's approval screen when running embedded — it must be a top-level
-  // browser navigation. window.open(url, '_top') is Shopify's own documented pattern for exiting
-  // the embedded iframe; falls back to a normal same-frame redirect when not embedded at all.
+  // Shopify App Pricing (Managed Pricing) is enabled for this app in the Partner Dashboard —
+  // Shopify now rejects the old manual recurring_application_charges REST flow outright (403,
+  // empty body) for every store, confirmed live. New subscriptions must go through Shopify's
+  // own hosted plan-selection page instead; this app no longer creates the charge itself.
+  var storeHandle = currentShop.replace(".myshopify.com", "");
+  var url = "https://admin.shopify.com/store/" + storeHandle + "/charges/goreturn/pricing_plans";
+  // Same reasoning as before: Shopify's own pages refuse to render inside our app's iframe, so
+  // this must be a top-level browser navigation, not a same-frame redirect.
   if (window.top !== window.self) {
     window.open(url, "_top");
   } else {
@@ -2939,6 +2941,17 @@ function setPortalLinks() {
     console.log("Portal link error:", e);
   }
   checkDashboardAuth();
+  // Pick up any plan change the merchant just made on Shopify's Managed Pricing page (see
+  // upgradeToPlan()) before loading store data, so the dashboard reflects it on this very load
+  // instead of the next one. Never blocks the rest of init if it fails.
+  try {
+    if (currentShop) {
+      const auth = await shopAuthHeaders();
+      await fetch("/api/billing/sync-plan?shop=" + encodeURIComponent(currentShop), { headers: auth });
+    }
+  } catch (e) {
+    console.log("Plan sync error:", e);
+  }
   loadStores()
     .then(() => loadReturns())
     .then(() => renderDashCharts())

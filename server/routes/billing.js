@@ -11,6 +11,32 @@ const { requireShopAccess } = require('../lib/auth');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:3001';
 
+// Shopify App Pricing (Managed Pricing) is enabled for this app in the Partner Dashboard —
+// merchants now select/approve plans on Shopify's own hosted page, not through our old REST
+// recurring_application_charges flow (which Shopify rejects outright for this app, confirmed
+// via production logs: 403 with an empty body, regardless of merchant or store type). Since we
+// no longer create the charge ourselves, we instead ask Shopify what the merchant's current
+// active subscription actually is via the Admin GraphQL API, and mirror that into our own
+// plan column. This never creates or modifies a charge — read-only against Shopify.
+async function syncManagedPricingPlan(shop, access_token) {
+  const query = `{ currentAppInstallation { activeSubscriptions { name status } } }`;
+  const r = await fetch(`https://${shop}/admin/api/2025-04/graphql.json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': access_token },
+    body: JSON.stringify({ query })
+  });
+  const data = await r.json();
+  const subs = data?.data?.currentAppInstallation?.activeSubscriptions || [];
+  const active = subs.find(s => s.status === 'ACTIVE');
+  if (!active) return null;
+  // Match by plan display name (case-insensitive) against our own PLANS config — the Partner
+  // Dashboard pricing plans were named 'free'/'starter'/'growth'/'pro' to match exactly.
+  const matchedKey = Object.keys(PLANS).find(k => k.toLowerCase() === (active.name || '').toLowerCase());
+  if (!matchedKey) return null;
+  await pool.query('UPDATE shopify_stores SET plan=$1 WHERE shop_domain=$2', [matchedKey, shop]);
+  return matchedKey;
+}
+
 function registerBillingRoutes(app) {
   app.get('/api/billing/create', async (req, res) => {
     const { shop, plan } = req.query;
@@ -123,6 +149,25 @@ function registerBillingRoutes(app) {
 
   app.get('/api/billing/plans', (req, res) => {
     res.json(PLANS);
+  });
+
+  // Called by the embedded app on load (see client/build/embedded.html init) to pick up any
+  // plan change the merchant just made on Shopify's Managed Pricing page — read-only against
+  // Shopify, never creates/modifies a charge. Safe to call on every load; a no-op when nothing
+  // changed since Shopify's activeSubscriptions query is cheap and this only writes to our DB
+  // when a real, matching active subscription is found.
+  app.get('/api/billing/sync-plan', requireShopAccess, async (req, res) => {
+    const { shop } = req.query;
+    const sr = await getStoreToken(shop);
+    if (!sr.rows.length) return res.json({ ok: true, plan: null });
+    try {
+      const matchedKey = await syncManagedPricingPlan(shop, sr.rows[0].access_token);
+      res.json({ ok: true, plan: matchedKey });
+    } catch(e) {
+      console.log('billing/sync-plan error:', e.message);
+      // Never block the dashboard from loading over a sync failure — it'll retry next load.
+      res.json({ ok: true, plan: null });
+    }
   });
 
   app.post('/api/offers/redeem', requireShopAccess, async (req, res) => {
