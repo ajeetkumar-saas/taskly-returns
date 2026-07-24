@@ -19,6 +19,23 @@ function registerBillingRoutes(app) {
     const sr = await getStoreToken(shop);
     if (!sr.rows.length) return res.status(404).json({ error: 'Store not connected' });
     try {
+      // Shopify partner/development stores (including Shopify's own automated App Review
+      // stores — confirmed via Partner Dashboard app history: every app-review-* store shows
+      // "Installed" then "Store closed", never a successful charge) can ONLY accept test
+      // charges — a real (test:false) charge to one of these is rejected outright with a
+      // 403 and an empty body, which is exactly what was happening here. NODE_ENV alone can't
+      // tell us this, since it's correctly 'production' for the live app; we ask Shopify
+      // directly via the shop's plan_name instead. Real merchant stores are unaffected and
+      // still get a genuine (non-test) charge.
+      let isDevStore = process.env.NODE_ENV !== 'production';
+      try {
+        const shopResp = await fetch(`https://${shop}/admin/api/2025-04/shop.json?fields=plan_name`, {
+          headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
+        });
+        const shopData = await shopResp.json();
+        if (shopData.shop?.plan_name === 'partner_test') isDevStore = true;
+      } catch(shopErr) { /* if this lookup fails, fall back to the NODE_ENV check above */ }
+
       const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges.json`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': sr.rows[0].access_token },
@@ -28,10 +45,7 @@ function registerBillingRoutes(app) {
             price: planData.price,
             return_url: `${APP_URL}/api/billing/confirm?shop=${shop}&plan=${plan}`,
             trial_days: planData.trial_days,
-            // Test charges never move real money. Gated purely by NODE_ENV — never by shop
-            // domain content, since a real merchant's store name could legitimately contain
-            // "test" (e.g. a brand name) and would otherwise never be billed.
-            test: process.env.NODE_ENV !== 'production'
+            test: isDevStore
           }
         })
       });
