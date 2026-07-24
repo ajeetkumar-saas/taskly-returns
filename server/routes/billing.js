@@ -32,9 +32,12 @@ function registerBillingRoutes(app) {
         const shopResp = await fetch(`https://${shop}/admin/api/2025-04/shop.json?fields=plan_name`, {
           headers: { 'X-Shopify-Access-Token': sr.rows[0].access_token }
         });
-        const shopData = await shopResp.json();
+        const shopRawText = await shopResp.text();
+        console.log('billing/create: shop.json status', shopResp.status, 'body:', shopRawText.slice(0, 300));
+        const shopData = JSON.parse(shopRawText);
         if (shopData.shop?.plan_name === 'partner_test') isDevStore = true;
-      } catch(shopErr) { /* if this lookup fails, fall back to the NODE_ENV check above */ }
+      } catch(shopErr) { console.log('billing/create: shop.json lookup failed:', shopErr.message); }
+      console.log('billing/create: isDevStore resolved to', isDevStore);
 
       const r = await fetch(`https://${shop}/admin/api/2025-04/recurring_application_charges.json`, {
         method: 'POST',
