@@ -35,13 +35,17 @@ function registerBillingRoutes(app) {
           }
         })
       });
-      const data = await r.json();
+      // Read as text first, not r.json() directly — a JSON parse failure on the raw stream
+      // previously only surfaced as "Unexpected end of JSON input" with no visibility into the
+      // actual HTTP status or body Shopify sent, making the real cause undiagnosable.
+      const rawText = await r.text();
+      console.log('billing/create: Shopify response status', r.status, 'body:', rawText.slice(0, 500));
+      let data = {};
+      try { data = JSON.parse(rawText); } catch(parseErr) { /* handled by the empty-charge branch below */ }
       const charge = data.recurring_application_charge;
       if (charge && charge.confirmation_url) {
         res.redirect(charge.confirmation_url);
       } else {
-        // Shopify responded but didn't return a usable charge — log the raw response so this
-        // is diagnosable instead of a silent, unexplained redirect back to the settings page.
         console.log('billing/create: no confirmation_url in Shopify response:', JSON.stringify(data));
         res.redirect(`/?shop=${shop}&connected=true&billing=skipped`);
       }
