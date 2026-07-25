@@ -116,7 +116,19 @@ function registerAdminPlanRoutes(app) {
 
   app.get('/api/activity-log', authenticateRequest, async (req, res) => {
     try {
-      const r = await pool.query('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 200');
+      // Platform owner: sees everything, optionally narrowed to one store via ?shop=.
+      // Shop-scoped team member: ALWAYS restricted to their own store — this previously had no
+      // shop filter at all, so any team member (any role, any shop) could see every other
+      // merchant's activity log. isPlatformOwner is set only from which table matched in
+      // authenticateRequest, never from a role string (same fix pattern as P0-1 in /api/team).
+      if (!req.user.isPlatformOwner) {
+        const r = await pool.query('SELECT * FROM activity_log WHERE shop_domain=$1 ORDER BY created_at DESC LIMIT 200', [req.user.shop_domain]);
+        return res.json(r.rows);
+      }
+      const { shop } = req.query;
+      const r = shop
+        ? await pool.query('SELECT * FROM activity_log WHERE shop_domain=$1 ORDER BY created_at DESC LIMIT 200', [shop])
+        : await pool.query('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 200');
       res.json(r.rows);
     } catch(e) { res.json([]); }
   });

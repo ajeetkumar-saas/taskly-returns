@@ -754,8 +754,8 @@ Changed My Mind</textarea></div>
       </div>
       <!-- Activity Log Tab -->
       <div id="admPanel-activity" style="display:none">
-        <div class="card"><div class="card-hdr"><h3><i class="fas fa-history" style="color:var(--primary);margin-right:8px"></i>Activity Log</h3><button class="btn btn-secondary" onclick="loadActivityLog()"><i class="fas fa-sync-alt"></i> Refresh</button></div>
-        <div class="card-body" style="padding:0"><table><thead><tr><th>User</th><th>Role</th><th>Action</th><th>Details</th><th>IP</th><th>Time</th></tr></thead><tbody id="activityTb"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
+        <div class="card"><div class="card-hdr"><h3><i class="fas fa-history" style="color:var(--primary);margin-right:8px"></i>Activity Log</h3><div style="display:flex;gap:8px;align-items:center"><select id="activityStoreFilter" onchange="loadActivityLog()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--gray-200);font-size:12px"><option value="">All Stores</option></select><button class="btn btn-secondary" onclick="loadActivityLog()"><i class="fas fa-sync-alt"></i> Refresh</button></div></div>
+        <div class="card-body" style="padding:0"><table><thead><tr><th>Store</th><th>User</th><th>Role</th><th>Action</th><th>Details</th><th>IP</th><th>Time</th></tr></thead><tbody id="activityTb"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody></table></div></div>
       </div>
       <!-- Give Access Tab -->
       <div id="admPanel-access" style="display:none">
@@ -1012,17 +1012,32 @@ async function loadStoreData(){
   }catch(e){console.log('Store data error:',e);}
 }
 
+async function populateActivityStoreFilter(){
+  const sel=document.getElementById('activityStoreFilter');
+  if(!sel||sel.dataset.loaded)return;
+  try{
+    const r=await fetch('/api/shopify/stores',{headers:getAuthHeaders()});
+    const stores=await r.json();
+    if(!Array.isArray(stores))return;
+    sel.innerHTML='<option value="">All Stores</option>'+stores.map(s=>`<option value="${esc(s.shop_domain)}">${esc(s.store_name||s.shop_domain)}</option>`).join('');
+    sel.dataset.loaded='1';
+  }catch(e){console.log('Store filter load error:',e);}
+}
 async function loadActivityLog(){
   try{
-    const r=await fetch('/api/activity-log',{headers:getAuthHeaders()});const logs=await r.json();
+    await populateActivityStoreFilter();
+    const shop=document.getElementById('activityStoreFilter')?.value||'';
+    const url='/api/activity-log'+(shop?('?shop='+encodeURIComponent(shop)):'');
+    const r=await fetch(url,{headers:getAuthHeaders()});const logs=await r.json();
     const tb=document.getElementById('activityTb');
-    if(!logs.length){tb.innerHTML='<tr><td colspan="6" class="empty">No activity yet</td></tr>';return;}
+    if(!Array.isArray(logs)||!logs.length){tb.innerHTML='<tr><td colspan="7" class="empty">No activity yet</td></tr>';return;}
     tb.innerHTML=logs.map(x=>`<tr>
-      <td><strong>${x.user_name||'System'}</strong><br><span style="font-size:10px;color:var(--gray-400)">${x.user_email}</span></td>
-      <td><span class="badge badge-${x.user_role==='owner'?'approved':x.user_role==='admin'?'processed':'pending'}">${x.user_role||'-'}</span></td>
-      <td>${x.action}</td>
-      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${x.details||'-'}</td>
-      <td style="font-size:10px;color:var(--gray-400)">${x.ip_address||'-'}</td>
+      <td style="font-size:11px">${esc(x.shop_domain)||'<span style="color:var(--gray-400)">Unknown store</span>'}</td>
+      <td><strong>${esc(x.user_name)||'System'}</strong><br><span style="font-size:10px;color:var(--gray-400)">${esc(x.user_email)}</span></td>
+      <td><span class="badge badge-${x.user_role==='owner'?'approved':x.user_role==='admin'?'processed':'pending'}">${esc(x.user_role)||'-'}</span></td>
+      <td>${esc(x.action)}</td>
+      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(x.details)||'-'}</td>
+      <td style="font-size:10px;color:var(--gray-400)">${esc(x.ip_address)||'-'}</td>
       <td style="font-size:11px">${new Date(x.created_at).toLocaleString('en-IN')}</td>
     </tr>`).join('');
   }catch(e){console.log('Activity log error:',e);}

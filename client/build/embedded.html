@@ -136,6 +136,7 @@ tbody tr:hover{background:var(--gray-50)}
     <div class="nav-item" onclick="showPage('promotions')"><i class="fas fa-gift"></i> Promotions</div>
     <div class="nav-item" onclick="showPage('webhooks')"><i class="fas fa-code"></i> Webhooks</div>
     <div class="nav-item" onclick="showPage('team')"><i class="fas fa-users"></i> Team</div>
+    <div class="nav-item" onclick="showPage('activity')"><i class="fas fa-history"></i> Activity Log</div>
     <div class="nav-item" onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</div>
     <div class="nav-item" onclick="showPage('help')"><i class="fas fa-question-circle"></i> Help Center</div>
     <div class="nav-item" onclick="showPage('admin')" id="adminNav" style="display:none"><i class="fas fa-shield-halved"></i> Admin</div>
@@ -705,6 +706,12 @@ Changed My Mind</textarea></div>
       </div></div>
     </div>
 
+    <!-- Activity Log Page (seller's own store — always scoped server-side, no store picker needed) -->
+    <div class="page" id="page-activity">
+      <div class="card"><div class="card-hdr"><h3><i class="fas fa-history" style="color:var(--primary);margin-right:8px"></i>Activity Log</h3><button class="btn btn-secondary" onclick="loadMyActivityLog()"><i class="fas fa-sync-alt"></i> Refresh</button></div>
+      <div class="card-body" style="padding:0"><table><thead><tr><th>User</th><th>Role</th><th>Action</th><th>Details</th><th>Time</th></tr></thead><tbody id="myActivityTb"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></div>
+    </div>
+
     <!-- Admin Page -->
     <div class="page" id="page-admin">
       <!-- Admin Tabs -->
@@ -844,6 +851,7 @@ function showPage(p) {
       settings: "Settings",
       admin: "Admin",
       team: "Team Members",
+      activity: "Activity Log",
     }[p] || p;
   if (p === "store-analytics") {
     if (!canAccess("analytics")) return showUpgrade("store-analytics");
@@ -866,6 +874,7 @@ function showPage(p) {
     loadAllStores();
   }
   if (p === "team") loadTeam();
+  if (p === "activity") loadMyActivityLog();
   if (p === "logistics") loadLogisticsStatus();
   if (p === "automation") {
     if (!canAccess("automation")) return showUpgrade("automation");
@@ -2039,6 +2048,35 @@ async function loadActivityLog() {
   }
 }
 
+// Seller's own store activity log — the backend already scopes this to the caller's own
+// shop_domain automatically (non-platform-owner sessions never see other stores' rows), so no
+// store picker is needed here, unlike the owner-only Admin > Activity Log tab above.
+async function loadMyActivityLog() {
+  try {
+    const r = await fetch("/api/activity-log", { headers: getAuthHeaders() });
+    const logs = await r.json();
+    const tb = document.getElementById("myActivityTb");
+    if (!tb) return;
+    if (!Array.isArray(logs) || !logs.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="empty">No activity yet</td></tr>';
+      return;
+    }
+    tb.innerHTML = logs
+      .map(
+        (x) => `<tr>
+      <td><strong>${esc(x.user_name) || "System"}</strong><br><span style="font-size:10px;color:var(--gray-400)">${esc(x.user_email)}</span></td>
+      <td><span class="badge badge-${x.user_role === "owner" ? "approved" : x.user_role === "admin" ? "processed" : "pending"}">${esc(x.user_role) || "-"}</span></td>
+      <td>${esc(x.action)}</td>
+      <td style="font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(x.details) || "-"}</td>
+      <td style="font-size:11px">${new Date(x.created_at).toLocaleString("en-IN")}</td>
+    </tr>`,
+      )
+      .join("");
+  } catch (e) {
+    console.log("Activity log error:", e);
+  }
+}
+
 async function changePlan(shop, plan) {
   await fetch("/api/admin/change-plan", {
     method: "POST",
@@ -2234,6 +2272,7 @@ const ROLE_ACCESS = {
     "webhooks",
     "settings",
     "team",
+    "activity",
     "help",
     "fraud",
     "pincode-risk",

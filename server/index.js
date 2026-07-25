@@ -320,6 +320,13 @@ await pool.query(`ALTER TABLE shopify_stores ADD COLUMN IF NOT EXISTS custom_pri
       ip_address VARCHAR(50) DEFAULT '',
       created_at TIMESTAMP DEFAULT NOW()
     )`);
+    // Additive: activity_log had no shop_domain at all, so GET /api/activity-log could only ever
+    // return every merchant's events with no way to filter — and worse, any authenticated team
+    // member (any role, any shop) could see every OTHER shop's activity too, since the route had
+    // no shop scoping whatsoever. Existing rows get '' (unknown store) and remain visible only to
+    // the platform owner; nothing about existing behavior changes for rows already written.
+    await pool.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS shop_domain VARCHAR(255) DEFAULT ''`).catch(e=>console.log('add activity_log.shop_domain:',e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_activity_log_shop_domain ON activity_log(shop_domain)`).catch(e=>console.log('idx_activity_log_shop_domain:',e.message));
 
     // Indexes — none existed anywhere before this. At today's data volume these build instantly
     // (milliseconds, brief write-lock only), but shop_domain/session_token are the WHERE clause
