@@ -222,6 +222,7 @@ function registerReturnRoutes(app) {
     return requireOwner(req, res, next);
   }, async (req, res) => {
     const { shop, status, type, date_from, date_to, archived } = req.query;
+    console.log('GET /api/returns: query params received:', JSON.stringify(req.query));
     let query = 'SELECT * FROM returns';
     const params = [];
     const conditions = [];
